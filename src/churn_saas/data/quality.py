@@ -6,6 +6,8 @@ dans le projet. Ne jamais lire data/raw/*.csv directement.
 
 import csv
 import hashlib
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,23 @@ from loguru import logger
 _ENCODAGES_CANDIDATS = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
 # Taille du bloc d'échantillonnage pour la détection d'encodage et de séparateur
 _BLOC_DETECTION = 32_768
+
+# Marqueurs textuels de valeur manquante (comparés après strip().lower())
+_MARQUEURS_MANQUANTS = frozenset(
+    {
+        "",
+        "n/a",
+        "na",
+        "nan",
+        "null",
+        "none",
+        "#n/a",
+        "-",
+        "nd",
+        "nr",
+        "inconnu",
+    }
+)
 
 
 def _detecter_encodage(chemin: Path) -> str:
@@ -166,3 +185,503 @@ def profil_compact(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     return pd.DataFrame(lignes).set_index("colonne")
+
+
+# ---------------------------------------------------------------------------
+# Analyse des doublons
+# ---------------------------------------------------------------------------
+
+
+def analyser_doublons(df: pd.DataFrame, cle_metier: str = "client_id") -> dict[str, Any]:
+    """Distingue les doublons exacts (toutes colonnes) des doublons sur la clé métier.
+
+    Les deux cas ont un traitement différent :
+    - Doublons exacts : suppression sécurisée (lignes strictement redondantes).
+    - Doublons sur clé métier seulement : investigation obligatoire avant décision.
+
+    Parameters
+    ----------
+    df:
+        DataFrame à analyser.
+    cle_metier:
+        Nom de la colonne identifiant un client de manière unique.
+
+    Returns
+    -------
+    dict avec les clés : nb_total_lignes, nb_doublons_exacts, exemples_doublons_exacts,
+    traitement_doublons_exacts, nb_doublons_cle_metier, nb_doublons_cle_metier_non_exacts,
+    exemples_doublons_cle_metier, traitement_doublons_cle_metier.
+    """
+    n = len(df)
+
+    masque_exact = df.duplicated(keep=False)
+    nb_doublons_exacts = int(masque_exact.sum())
+    exemples_exact = df[masque_exact].head(10) if nb_doublons_exacts > 0 else df.iloc[0:0]
+
+    if cle_metier in df.columns:
+        masque_cle = df.duplicated(subset=[cle_metier], keep=False)
+        nb_doublons_cle = int(masque_cle.sum())
+        exemples_cle = df[masque_cle].head(10) if nb_doublons_cle > 0 else df.iloc[0:0]
+        nb_cle_non_exact = int((masque_cle & ~masque_exact).sum())
+    else:
+        logger.warning("Clé métier '{}' absente du DataFrame", cle_metier)
+        nb_doublons_cle = 0
+        nb_cle_non_exact = 0
+        exemples_cle = df.iloc[0:0]
+
+    logger.info(
+        "Doublons — exacts : {}, clé métier : {} (dont {} non-exacts)",
+        nb_doublons_exacts,
+        nb_doublons_cle,
+        nb_cle_non_exact,
+    )
+
+    return {
+        "nb_total_lignes": n,
+        "nb_doublons_exacts": nb_doublons_exacts,
+        "exemples_doublons_exacts": exemples_exact,
+        "traitement_doublons_exacts": (
+            "Suppression sécurisée par drop_duplicates(keep='first') : lignes strictement "
+            "identiques sur toutes les colonnes, donc redondantes."
+        ),
+        "nb_doublons_cle_metier": nb_doublons_cle,
+        "nb_doublons_cle_metier_non_exacts": nb_cle_non_exact,
+        "exemples_doublons_cle_metier": exemples_cle,
+        "traitement_doublons_cle_metier": (
+            "Investigation métier obligatoire : même client_id avec données différentes peut "
+            "indiquer des mises à jour historiques (garder la plus récente), plusieurs contacts "
+            "par compte (agréger), ou une erreur de jointure. Ne pas supprimer sans vérification."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Coercition des numériques stockés en texte
+# ---------------------------------------------------------------------------
+
+
+def _coercer_valeur(valeur: str) -> tuple[str | None, str]:
+    """Transforme une chaîne en représentation numérique parsable.
+
+    Returns
+    -------
+    (valeur_nettoyee_ou_None, statut) où statut ∈ {'direct', 'repare', 'manquant', 'irrecuperable'}.
+    Retourne (None, 'manquant') pour les marqueurs de valeur manquante.
+    Retourne (None, 'irrecuperable') si la valeur ne peut pas être convertie.
+    """
+    stripped = valeur.strip()
+
+    if stripped.lower() in _MARQUEURS_MANQUANTS:
+        return None, "manquant"
+
+    try:
+        float(stripped)
+        return stripped, "direct"
+    except ValueError:
+        pass
+
+    v = stripped
+    # Espaces insécables (NBSP \xa0, NNBSP  )
+    v = v.replace("\xa0", "").replace(" ", "")
+    # Symboles monétaires et pourcentage
+    v = re.sub(r"[€$£%]", "", v).strip()
+
+    if "," in v and "." in v:
+        # Les deux séparateurs présents : le dernier est le décimal
+        if v.rfind(".") > v.rfind(","):
+            # "1,234.56" → anglais : virgule = milliers
+            v = v.replace(",", "")
+        else:
+            # "1.234,56" → français : point = milliers, virgule = décimale
+            v = v.replace(".", "").replace(",", ".")
+    elif "," in v:
+        parts = v.split(",")
+        # Heuristique : "1,234" (une virgule, 3 chiffres après) → séparateur de milliers
+        # sinon "1,5" ou "12,50" → décimale française
+        if (
+            len(parts) == 2
+            and re.fullmatch(r"\d{1,3}", parts[0])
+            and re.fullmatch(r"\d{3}", parts[1])
+        ):
+            v = v.replace(",", "")  # milliers EN ("1,234" → 1234)
+        else:
+            v = v.replace(",", ".")  # décimale FR ("1,5" → 1.5)
+
+    # Espaces résiduels entre chiffres → séparateurs de milliers ("1 234")
+    v = re.sub(r"(\d)\s+(\d)", r"\1\2", v)
+
+    try:
+        float(v)
+        return v, "repare"
+    except ValueError:
+        return None, "irrecuperable"
+
+
+def coercer_numeriques(df: pd.DataFrame, colonnes: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Convertit les colonnes numériques stockées en texte.
+
+    Gère : séparateurs décimaux virgule/point, séparateurs de milliers,
+    symboles (%, €), espaces insécables, marqueurs textuels de manquant
+    ("N/A", "n/a", "-", "", "null"…).
+
+    Parameters
+    ----------
+    df:
+        DataFrame source (non modifié en place).
+    colonnes:
+        Liste des colonnes à convertir.
+
+    Returns
+    -------
+    (df_converti, rapport) où rapport est un DataFrame indexé par colonne avec
+    les compteurs : nb_directes, nb_reparees, nb_manquants, nb_irrecuperables.
+    """
+    df = df.copy()
+    lignes_rapport: list[dict[str, Any]] = []
+
+    for col in colonnes:
+        if col not in df.columns:
+            logger.warning("Colonne absente : {}", col)
+            continue
+
+        resultats: list[tuple[float, str]] = []
+
+        for val in df[col]:
+            if pd.isna(val):
+                resultats.append((float("nan"), "manquant"))
+            else:
+                val_nettoyee, statut = _coercer_valeur(str(val))
+                resultats.append(
+                    (float(val_nettoyee) if val_nettoyee is not None else float("nan"), statut)
+                )
+
+        df[col] = pd.to_numeric([r[0] for r in resultats], errors="coerce")
+        statuts = [r[1] for r in resultats]
+
+        lignes_rapport.append(
+            {
+                "colonne": col,
+                "nb_directes": statuts.count("direct"),
+                "nb_reparees": statuts.count("repare"),
+                "nb_manquants": statuts.count("manquant"),
+                "nb_irrecuperables": statuts.count("irrecuperable"),
+            }
+        )
+        logger.info(
+            "Coercition {} — directes:{} réparées:{} manquants:{} irrécupérables:{}",
+            col,
+            statuts.count("direct"),
+            statuts.count("repare"),
+            statuts.count("manquant"),
+            statuts.count("irrecuperable"),
+        )
+
+    rapport = (
+        pd.DataFrame(lignes_rapport).set_index("colonne") if lignes_rapport else pd.DataFrame()
+    )
+    return df, rapport
+
+
+# ---------------------------------------------------------------------------
+# Parsing multi-formats des dates
+# ---------------------------------------------------------------------------
+
+_FORMATS_DATE_CASCADE = [
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%d/%m/%Y",
+    "%m/%d/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%Y",
+    "%Y%m%d",
+]
+
+
+def _detecter_format_date(serie: pd.Series) -> tuple[str, str, int]:
+    """Détecte le format dominant d'une série de chaînes de dates.
+
+    Returns
+    -------
+    (format_strptime, description_convention, nb_ambigues)
+    """
+    non_vides = serie.dropna()
+    non_vides = non_vides[non_vides.astype(str).str.strip() != ""]
+    if len(non_vides) == 0:
+        return "%Y-%m-%d", "aucune valeur non nulle", 0
+
+    compteurs = {
+        fmt: int(pd.to_datetime(non_vides, format=fmt, errors="coerce").notna().sum())
+        for fmt in _FORMATS_DATE_CASCADE
+    }
+    meilleur_fmt = max(compteurs, key=lambda f: compteurs[f])
+
+    nb_ambigues = 0
+    convention = meilleur_fmt
+
+    if meilleur_fmt in ("%d/%m/%Y", "%m/%d/%Y"):
+        # Analyser les valeurs DD/MM ou MM/DD pour lever l'ambiguïté
+        candidats = non_vides[non_vides.str.match(r"^\d{1,2}/\d{1,2}/\d{4}$")]
+        premier_gt12 = deuxieme_gt12 = ambigues = 0
+        for v in candidats:
+            parties = str(v).split("/")
+            try:
+                p1, p2 = int(parties[0]), int(parties[1])
+            except (ValueError, IndexError):
+                continue
+            if p1 > 12:
+                premier_gt12 += 1
+            if p2 > 12:
+                deuxieme_gt12 += 1
+            if p1 <= 12 and p2 <= 12:
+                ambigues += 1
+
+        nb_ambigues = ambigues
+
+        if premier_gt12 > 0 and deuxieme_gt12 == 0:
+            meilleur_fmt = "%d/%m/%Y"
+            convention = "DD/MM/YYYY (premier champ > 12 observé → non ambigu)"
+        elif deuxieme_gt12 > 0 and premier_gt12 == 0:
+            meilleur_fmt = "%m/%d/%Y"
+            convention = "MM/DD/YYYY (second champ > 12 observé → non ambigu)"
+        else:
+            # Indécidable sur ce critère → convention française par défaut
+            meilleur_fmt = "%d/%m/%Y"
+            convention = (
+                f"DD/MM/YYYY (convention par défaut — {ambigues} date(s) ambiguë(s), "
+                "aucune valeur > 12 ne permet de trancher)"
+            )
+
+    return meilleur_fmt, convention, nb_ambigues
+
+
+def parser_dates(df: pd.DataFrame, colonnes: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Parse les colonnes de date en cascade de formats.
+
+    Détecte et compte les dates ambiguës (ex. 01/02/2021 : JJ/MM ou MM/JJ ?),
+    explicite la convention retenue. Ne pose pas dayfirst=True aveuglément.
+
+    Parameters
+    ----------
+    df:
+        DataFrame source (non modifié en place).
+    colonnes:
+        Noms des colonnes à parser.
+
+    Returns
+    -------
+    (df_avec_dates_parsées, rapport) indexé par colonne avec :
+    format_detecte, convention_retenue, nb_parsees, nb_ambigues, nb_irrecuperables.
+    """
+    df = df.copy()
+    lignes_rapport: list[dict[str, Any]] = []
+
+    for col in colonnes:
+        if col not in df.columns:
+            logger.warning("Colonne absente : {}", col)
+            continue
+
+        fmt, convention, nb_ambigues = _detecter_format_date(df[col])
+        parsed = pd.to_datetime(df[col], format=fmt, errors="coerce")
+        nb_parsees = int(parsed.notna().sum())
+        nb_irrecup = int(df[col].notna().sum()) - nb_parsees
+
+        df[col] = parsed
+        lignes_rapport.append(
+            {
+                "colonne": col,
+                "format_detecte": fmt,
+                "convention_retenue": convention,
+                "nb_parsees": nb_parsees,
+                "nb_ambigues": nb_ambigues,
+                "nb_irrecuperables": nb_irrecup,
+            }
+        )
+        logger.info(
+            "Dates {} — format:{} parsées:{} ambiguës:{} irrécupérables:{}",
+            col,
+            fmt,
+            nb_parsees,
+            nb_ambigues,
+            nb_irrecup,
+        )
+
+    rapport = (
+        pd.DataFrame(lignes_rapport).set_index("colonne") if lignes_rapport else pd.DataFrame()
+    )
+    return df, rapport
+
+
+# ---------------------------------------------------------------------------
+# Détection des valeurs métier impossibles
+# ---------------------------------------------------------------------------
+
+# Préfixes de colonnes structurellement positives (nom en minuscules)
+_PREFIXES_POSITIFS = (
+    "mrr",
+    "arr",
+    "nb_",
+    "nombre_",
+    "sieges",
+    "utilisateurs",
+    "anciennete",
+    "score",
+    "valeur",
+    "montant",
+    "revenue",
+    "ca_",
+)
+
+
+def detecter_valeurs_impossibles(df: pd.DataFrame) -> pd.DataFrame:
+    """Détecte les incohérences métier dans le DataFrame.
+
+    Règles appliquées :
+    - utilisateurs_actifs > sieges_souscrits
+    - taux_adoption_pct ∉ [0, 100]
+    - valeurs négatives dans les colonnes structurellement positives
+    - incohérence entre anciennete_mois et date_souscription (écart > 3 mois)
+
+    Parameters
+    ----------
+    df:
+        DataFrame à analyser.
+
+    Returns
+    -------
+    DataFrame d'anomalies avec les colonnes : regle, colonne_ou_paire,
+    nb_lignes_concernees, exemple.
+    """
+    anomalies: list[dict[str, Any]] = []
+
+    def _ajouter(regle: str, cible: str, masque: pd.Series) -> None:
+        nb = int(masque.sum())
+        if nb > 0:
+            anomalies.append(
+                {
+                    "regle": regle,
+                    "colonne_ou_paire": cible,
+                    "nb_lignes_concernees": nb,
+                    "exemple": df[masque].head(3).to_dict(orient="records"),
+                }
+            )
+
+    # Règle 1 : utilisateurs_actifs > sieges_souscrits
+    if "utilisateurs_actifs" in df.columns and "sieges_souscrits" in df.columns:
+        u = pd.to_numeric(df["utilisateurs_actifs"], errors="coerce")
+        s = pd.to_numeric(df["sieges_souscrits"], errors="coerce")
+        _ajouter(
+            "utilisateurs_actifs > sieges_souscrits",
+            "utilisateurs_actifs / sieges_souscrits",
+            u.notna() & s.notna() & (u > s),
+        )
+
+    # Règle 2 : taux_adoption_pct hors [0, 100]
+    if "taux_adoption_pct" in df.columns:
+        col = pd.to_numeric(df["taux_adoption_pct"], errors="coerce")
+        _ajouter(
+            "taux_adoption_pct ∉ [0, 100]",
+            "taux_adoption_pct",
+            col.notna() & ((col < 0) | (col > 100)),
+        )
+
+    # Règle 3 : valeurs négatives absurdes
+    for col in df.columns:
+        nom = col.lower()
+        if any(nom.startswith(pfx) for pfx in _PREFIXES_POSITIFS):
+            numerique = pd.to_numeric(df[col], errors="coerce")
+            _ajouter(f"{col} < 0 (valeur impossible)", col, numerique.notna() & (numerique < 0))
+
+    # Règle 4 : incohérence anciennete_mois / date_souscription (tolérance ±3 mois)
+    if "anciennete_mois" in df.columns and "date_souscription" in df.columns:
+        anc = pd.to_numeric(df["anciennete_mois"], errors="coerce")
+        dates = pd.to_datetime(df["date_souscription"], errors="coerce")
+        anc_calc = ((pd.Timestamp.now() - dates).dt.days / 30.44).round(0)
+        _ajouter(
+            "anciennete_mois incohérente avec date_souscription (écart > 3 mois)",
+            "anciennete_mois / date_souscription",
+            anc.notna() & anc_calc.notna() & ((anc - anc_calc).abs() > 3),
+        )
+
+    if not anomalies:
+        return pd.DataFrame(
+            columns=["regle", "colonne_ou_paire", "nb_lignes_concernees", "exemple"]
+        )
+    return pd.DataFrame(anomalies)
+
+
+# ---------------------------------------------------------------------------
+# Proposition de nommage normalisé
+# ---------------------------------------------------------------------------
+
+# Ensembles de tokens (séparés par _ dans les noms snake_case) → suffixe normalisé.
+# On divise le nom par _ puis on vérifie l'intersection avec l'ensemble de mots-clés.
+_REGLES_SUFFIXES_UNITES: list[tuple[frozenset[str], str]] = [
+    (frozenset({"euro", "euros", "eur", "prix", "montant", "valeur", "ca", "chiffre"}), "_eur"),
+    (frozenset({"pourcent", "pct", "percent", "taux"}), "_pct"),
+    (frozenset({"mois", "month"}), "_mois"),
+    (frozenset({"jour", "jours", "day", "days", "duree", "delai"}), "_jours"),
+]
+
+
+def _normaliser_nom(nom: str) -> str:
+    """Convertit un nom de colonne en snake_case sans accent ni caractère spécial."""
+    sans_accent = "".join(
+        c for c in unicodedata.normalize("NFD", nom) if unicodedata.category(c) != "Mn"
+    )
+    s = sans_accent.lower()
+    s = re.sub(r"[\s\-\.]+", "_", s)
+    s = re.sub(r"[^a-z0-9_]", "", s)
+    return re.sub(r"_+", "_", s).strip("_")
+
+
+def proposer_renommage(df: pd.DataFrame) -> pd.DataFrame:
+    """Propose une convention de nommage snake_case sans accent avec unités suffixées.
+
+    Critères :
+    - Minuscules, suppression des accents, caractères spéciaux → _.
+    - Unités suffixées (_eur, _pct, _mois, _jours) si détectées dans le nom original.
+
+    Parameters
+    ----------
+    df:
+        DataFrame dont on examine les noms de colonnes.
+
+    Returns
+    -------
+    DataFrame avec les colonnes : nom_original, nom_propose, modifie, raison.
+    """
+    lignes: list[dict[str, Any]] = []
+
+    for col in df.columns:
+        nouveau = _normaliser_nom(col)
+        raisons: list[str] = []
+
+        if col != col.lower():
+            raisons.append("mise en minuscules")
+        nfd = unicodedata.normalize("NFD", col)
+        if any(unicodedata.category(c) == "Mn" for c in nfd):
+            raisons.append("suppression des accents")
+        if re.search(r"[\s\-\.]", col):
+            raisons.append("remplacement des séparateurs par _")
+        if re.search(r"[^a-zA-Z0-9_\s\-\.]", col):
+            raisons.append("suppression des caractères spéciaux")
+
+        # Ajout du suffixe d'unité s'il est absent
+        # On tokenise le nom normalisé par _ pour éviter les faux positifs en snake_case
+        tokens = set(re.split(r"[_\s\-]+", col.lower()))
+        for mots_cle, suffixe in _REGLES_SUFFIXES_UNITES:
+            if tokens & mots_cle and not nouveau.endswith(suffixe.lstrip("_")):
+                nouveau = nouveau + suffixe
+                raisons.append(f"ajout suffixe unité {suffixe}")
+                break
+
+        lignes.append(
+            {
+                "nom_original": col,
+                "nom_propose": nouveau,
+                "modifie": col != nouveau,
+                "raison": ", ".join(raisons) if raisons else "conforme",
+            }
+        )
+
+    return pd.DataFrame(lignes)
