@@ -6,6 +6,8 @@ Toutes les figures du notebook passent par :func:`figure` pour garantir :
 - un style visuel uniforme (palette, grille, typographie).
 """
 
+from __future__ import annotations
+
 import itertools
 from pathlib import Path
 from typing import Any
