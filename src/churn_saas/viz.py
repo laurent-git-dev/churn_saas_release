@@ -34,7 +34,7 @@ PALETTE_PRINCIPALE: list[str] = [
 ]
 
 # Couleurs sémantiques pour les graphiques de classification churn
-COULEUR_CHURN: str = "#E84855"      # rouge  → risque de résiliation
+COULEUR_CHURN: str = "#E84855"  # rouge  → risque de résiliation
 COULEUR_NON_CHURN: str = "#2E86AB"  # bleu   → fidélité confirmée
 
 # Colormap séquentielle divergente : vert (faible risque) → rouge (risque élevé)

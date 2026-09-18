@@ -1,4 +1,5 @@
 """Test trivial : vérifie que le paquet est importable et que la config est cohérente."""
+
 import churn_saas
 import churn_saas.config as cfg
 
