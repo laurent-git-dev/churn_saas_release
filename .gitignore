@@ -1,0 +1,35 @@
+# Données et artefacts (exclus de git, présents dans le ZIP final)
+/data/
+/mlruns/
+/artifacts/
+/reports/figures/
+
+# Métadonnées Windows WSL (Zone.Identifier)
+*:Zone.Identifier
+
+# Environnement Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+*.ipynb_checkpoints/
+*.ipynb
+
+# Outils
+.env
+emissions.csv
+catboost_info/
+
+# mypy / ruff / coverage
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
