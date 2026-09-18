@@ -4,7 +4,6 @@ Couvre : analyser_doublons, coercer_numeriques, parser_dates,
 detecter_valeurs_impossibles, proposer_renommage.
 """
 
-
 import pandas as pd
 import pytest
 
