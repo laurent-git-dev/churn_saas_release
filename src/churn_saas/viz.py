@@ -127,6 +127,37 @@ def figure(
     return fig, ax
 
 
+def figure_grille(
+    nom: str,
+    titre: str,
+    nlignes: int = 1,
+    ncols: int = 2,
+    taille: tuple[float, float] = (14.0, 5.5),
+) -> tuple[Figure, Any]:
+    """Crée une figure multi-axes numérotée.
+
+    Analogue à :func:`figure` mais avec ``plt.subplots(nlignes, ncols)``.
+    :func:`sauvegarder` fonctionne de la même façon sur la figure retournée.
+
+    Retourne
+    --------
+    ``(fig, axes)`` — la figure et le tableau d'axes numpy.
+    """
+    num = next(_compteur)
+    fig, axes = plt.subplots(nlignes, ncols, figsize=taille)
+    fig.suptitle(f"Fig. {num} — {titre}", fontsize=13, fontweight="bold", y=1.02)
+
+    config.FIGURES.mkdir(parents=True, exist_ok=True)
+    chemin = config.FIGURES / f"{num:02d}_{nom}.png"
+    _registre[id(fig)] = chemin
+
+    def _on_close(event: object) -> None:
+        _ecrire_png(fig, chemin)
+
+    fig.canvas.mpl_connect("close_event", _on_close)
+    return fig, axes
+
+
 def sauvegarder(fig: Figure) -> Path:
     """Sauvegarde la figure dans ``reports/figures/`` et retourne le chemin PNG.
 
