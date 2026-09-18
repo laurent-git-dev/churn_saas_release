@@ -11,8 +11,10 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from loguru import logger
+from scipy import stats
 
 # Encodages testés dans l'ordre — du plus strict au plus permissif
 _ENCODAGES_CANDIDATS = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
@@ -607,6 +609,218 @@ def detecter_valeurs_impossibles(df: pd.DataFrame) -> pd.DataFrame:
             columns=["regle", "colonne_ou_paire", "nb_lignes_concernees", "exemple"]
         )
     return pd.DataFrame(anomalies)
+
+
+# ---------------------------------------------------------------------------
+# Analyse des mécanismes de manquance
+# ---------------------------------------------------------------------------
+
+
+def _cramers_v(x: pd.Series, y: pd.Series) -> float:
+    """V de Cramér entre deux séries catégorielles (après dropna commun)."""
+    mask = x.notna() & y.notna()
+    x, y = x[mask].astype(str), y[mask].astype(str)
+    if len(x) < 5 or x.nunique() < 2 or y.nunique() < 2:
+        return 0.0
+    table = pd.crosstab(x, y)
+    chi2, _, _, _ = stats.chi2_contingency(table, correction=False)
+    n = table.values.sum()
+    r, k = table.shape
+    denom = n * (min(r, k) - 1)
+    return float(np.sqrt(chi2 / denom)) if denom > 0 else 0.0
+
+
+def _force_association_binaire(masque_manquant: pd.Series, autre: pd.Series) -> float:
+    """Association entre un indicateur binaire de manquance et une autre colonne.
+
+    Corrélation point-bisériale pour les numériques, V de Cramér pour les catégorielles.
+    Retourne 0.0 si le calcul est impossible (trop peu de valeurs, variance nulle…).
+    """
+    valide = autre.notna()
+    x = masque_manquant[valide].astype(int)
+    y = autre[valide]
+    if x.nunique() < 2 or len(x) < 10:
+        return 0.0
+    if pd.api.types.is_numeric_dtype(y):
+        try:
+            r, _ = stats.pointbiserialr(x, y)
+            return float(abs(r)) if not np.isnan(r) else 0.0
+        except Exception:
+            return 0.0
+    try:
+        return _cramers_v(masque_manquant[valide].map({True: "manquant", False: "renseigne"}), y)
+    except Exception:
+        return 0.0
+
+
+def analyser_manquance(df: pd.DataFrame, cible: str) -> pd.DataFrame:
+    """Qualifie le mécanisme de manquance pour chaque colonne présentant des NA.
+
+    Pour chaque colonne avec valeurs manquantes :
+    - taux de manquants
+    - lien avec la cible (χ² sur table de contingence manquant × cible, avec p-value)
+    - lien avec les 3 autres colonnes les plus associées
+    - proposition de mécanisme MCAR / MAR / MNAR avec niveau de confiance et raisonnement
+    - recommandation de traitement
+
+    Hypothèse testée : un ``csat`` manquant est probablement MNAR (les insatisfaits ne
+    répondent pas → l'indicateur de manquance est lui-même une feature prédictive).
+    Cette hypothèse est vérifiée par le code, pas affirmée a priori.
+
+    Parameters
+    ----------
+    df:
+        DataFrame source.
+    cible:
+        Nom de la colonne cible binaire (0/1 ou bool).
+
+    Returns
+    -------
+    DataFrame indexé par colonne (une ligne par colonne avec manquants) avec les colonnes :
+    taux_manquants, p_value_cible, taux_churn_si_manquant, taux_churn_si_renseigne,
+    lien_cible_significatif, top3_associations, mecanisme_propose, confiance,
+    raisonnement, recommandation.
+
+    Raises
+    ------
+    ValueError
+        Si ``cible`` est absente du DataFrame.
+    """
+    if cible not in df.columns:
+        raise ValueError(f"Colonne cible '{cible}' absente du DataFrame")
+
+    cible_num = pd.to_numeric(df[cible], errors="coerce")
+    _SEUIL_ASSOCIATION = 0.15  # V de Cramér ou |r| au-delà duquel on parle de MAR
+
+    lignes: list[dict[str, Any]] = []
+
+    for col in df.columns:
+        if col == cible:
+            continue
+
+        masque_manquant = df[col].isna()
+        taux_manquants = masque_manquant.mean()
+        if taux_manquants == 0.0:
+            continue
+
+        # --- Lien avec la cible -----------------------------------------------
+        table = pd.crosstab(masque_manquant, cible_num.fillna(0).astype(int))
+        if table.shape[0] == 2 and table.shape[1] >= 2 and table.values.sum() > 0:
+            _, p_cible, _, _ = stats.chi2_contingency(table, correction=True)
+        else:
+            p_cible = float("nan")
+
+        taux_churn_manquant = cible_num[masque_manquant].mean()
+        taux_churn_renseigne = cible_num[~masque_manquant].mean()
+        lien_sig = not np.isnan(p_cible) and p_cible < 0.05
+
+        # --- Lien avec les autres colonnes ------------------------------------
+        autres_cols = [c for c in df.columns if c != col and c != cible]
+        associations: dict[str, float] = {
+            c: _force_association_binaire(masque_manquant, df[c]) for c in autres_cols
+        }
+        top3 = sorted(associations.items(), key=lambda kv: kv[1], reverse=True)[:3]
+        top3_str = ", ".join(f"{c}={v:.3f}" for c, v in top3 if v > 0)
+        assoc_max = max(associations.values(), default=0.0)
+
+        # --- Classification MCAR / MAR / MNAR ---------------------------------
+        if lien_sig:
+            mecanisme = "MNAR"
+            confiance = "élevée" if p_cible < 0.01 else "modérée"
+            raisonnement = (
+                f"La manquance est corrélée à la cible (χ² Yates p={p_cible:.4f} < 0.05). "
+                f"Taux de churn : {taux_churn_manquant:.1%} (manquant) vs "
+                f"{taux_churn_renseigne:.1%} (renseigné). "
+                "La valeur manquante n'est pas aléatoire par rapport à la variable d'intérêt — "
+                "c'est la signature d'un mécanisme MNAR."
+            )
+            recommandation = (
+                "Créer un indicateur binaire de manquance (feature prédictive à inclure dans le "
+                "pipeline), puis imputer par la médiane ou le mode pour les algorithmes "
+                "intolérants aux NA."
+            )
+        elif assoc_max >= _SEUIL_ASSOCIATION:
+            mecanisme = "MAR"
+            col_max = max(associations, key=associations.get)  # type: ignore[arg-type]
+            confiance = (
+                "élevée" if assoc_max > 0.3 else ("modérée" if assoc_max > 0.2 else "faible")
+            )
+            raisonnement = (
+                f"La manquance n'est pas corrélée à la cible (p={p_cible:.4f}) mais présente "
+                f"une association de {assoc_max:.3f} avec '{col_max}'. "
+                "La valeur est manquante de façon conditionnelle à des variables observées — "
+                "mécanisme MAR."
+            )
+            recommandation = (
+                "Imputation conditionnelle (MICE ou KNNImputer conditionné aux variables "
+                "associées). Ajouter un indicateur de manquance si le taux dépasse 10%."
+            )
+        else:
+            mecanisme = "MCAR"
+            confiance = "faible" if taux_manquants > 0.3 else "modérée"
+            raisonnement = (
+                f"Ni la cible (p={p_cible:.4f}) ni les autres colonnes "
+                f"(association max={assoc_max:.3f}) n'expliquent la manquance. "
+                "Hypothèse MCAR retenue par défaut — MCAR est difficile à prouver, "
+                "seulement à ne pas réfuter."
+            )
+            recommandation = (
+                "Imputation simple : moyenne pour les variables continues, "
+                "mode pour les catégorielles. "
+                "Supprimer la colonne si taux_manquants > 50%."
+            )
+
+        logger.info(
+            "Manquance {} — taux:{:.1%} mécanisme:{} confiance:{} (p_cible={:.4f})",
+            col,
+            taux_manquants,
+            mecanisme,
+            confiance,
+            p_cible if not np.isnan(p_cible) else -1.0,
+        )
+
+        lignes.append(
+            {
+                "colonne": col,
+                "taux_manquants": round(float(taux_manquants), 4),
+                "p_value_cible": (
+                    round(float(p_cible), 4) if not np.isnan(p_cible) else float("nan")
+                ),
+                "taux_churn_si_manquant": (
+                    round(float(taux_churn_manquant), 4)
+                    if not np.isnan(taux_churn_manquant)
+                    else float("nan")
+                ),
+                "taux_churn_si_renseigne": (
+                    round(float(taux_churn_renseigne), 4)
+                    if not np.isnan(taux_churn_renseigne)
+                    else float("nan")
+                ),
+                "lien_cible_significatif": bool(lien_sig),
+                "top3_associations": top3_str,
+                "mecanisme_propose": mecanisme,
+                "confiance": confiance,
+                "raisonnement": raisonnement,
+                "recommandation": recommandation,
+            }
+        )
+
+    colonnes_sortie = [
+        "colonne",
+        "taux_manquants",
+        "p_value_cible",
+        "taux_churn_si_manquant",
+        "taux_churn_si_renseigne",
+        "lien_cible_significatif",
+        "top3_associations",
+        "mecanisme_propose",
+        "confiance",
+        "raisonnement",
+        "recommandation",
+    ]
+    if not lignes:
+        return pd.DataFrame(columns=colonnes_sortie).set_index("colonne")
+    return pd.DataFrame(lignes).set_index("colonne")
 
 
 # ---------------------------------------------------------------------------

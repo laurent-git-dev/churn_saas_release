@@ -1,19 +1,153 @@
 """Tests des fonctions de contrôle qualité des données.
 
-Couvre : analyser_doublons, coercer_numeriques, parser_dates,
+Couvre : analyser_doublons, analyser_manquance, coercer_numeriques, parser_dates,
 detecter_valeurs_impossibles, proposer_renommage.
 """
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from churn_saas.data.quality import (
     analyser_doublons,
+    analyser_manquance,
     coercer_numeriques,
     detecter_valeurs_impossibles,
     parser_dates,
     proposer_renommage,
 )
+
+# ---------------------------------------------------------------------------
+# analyser_manquance
+# ---------------------------------------------------------------------------
+
+_RNG = np.random.default_rng(42)
+
+
+def _df_mnar_csat(n: int = 300) -> pd.DataFrame:
+    """Simule le scénario CSAT MNAR : les clients qui churneront ne répondent pas."""
+    churn = np.array([i % 2 for i in range(n)])
+    csat = np.where(churn == 1, np.nan, _RNG.uniform(3.0, 5.0, size=n))
+    mrr = _RNG.uniform(500, 5000, size=n)
+    return pd.DataFrame({"churn": churn, "csat": csat, "mrr": mrr})
+
+
+def _df_mcar(n: int = 500) -> pd.DataFrame:
+    """Simule une manquance aléatoire (MCAR) sans lien ni avec churn ni avec mrr."""
+    churn = _RNG.integers(0, 2, size=n)
+    mrr = _RNG.uniform(500, 5000, size=n)
+    masque = _RNG.random(n) < 0.25
+    feature = np.where(masque, np.nan, _RNG.uniform(1.0, 5.0, size=n))
+    return pd.DataFrame({"churn": churn, "mrr": mrr, "feature_aleatoire": feature})
+
+
+def _df_mar(n: int = 500) -> pd.DataFrame:
+    """Simule une manquance MAR : le score est absent quand mrr > 700, churn indépendant."""
+    mrr = _RNG.uniform(100, 1000, size=n)
+    churn = _RNG.integers(0, 2, size=n)
+    masque = mrr > 700
+    score = np.where(masque, np.nan, _RNG.uniform(1.0, 5.0, size=n))
+    return pd.DataFrame({"churn": churn, "mrr": mrr, "score_mar": score})
+
+
+class TestAnalyserManquance:
+    def test_retourne_dataframe_avec_bonnes_colonnes(self) -> None:
+        res = analyser_manquance(_df_mnar_csat(), "churn")
+        assert isinstance(res, pd.DataFrame)
+        attendues = {
+            "taux_manquants",
+            "p_value_cible",
+            "taux_churn_si_manquant",
+            "taux_churn_si_renseigne",
+            "lien_cible_significatif",
+            "top3_associations",
+            "mecanisme_propose",
+            "confiance",
+            "raisonnement",
+            "recommandation",
+        }
+        assert attendues.issubset(set(res.columns))
+
+    def test_cible_exclue_du_resultat(self) -> None:
+        res = analyser_manquance(_df_mnar_csat(), "churn")
+        assert "churn" not in res.index
+
+    def test_colonnes_sans_manquants_absentes(self) -> None:
+        df = pd.DataFrame({"churn": [0, 1, 0, 1], "mrr": [100.0, 200.0, 300.0, 400.0]})
+        res = analyser_manquance(df, "churn")
+        assert "mrr" not in res.index
+
+    def test_csat_mnar_detecte(self) -> None:
+        """Scénario central : CSAT manquant chez les churners → MNAR."""
+        res = analyser_manquance(_df_mnar_csat(300), "churn")
+        assert "csat" in res.index
+        assert res.loc["csat", "mecanisme_propose"] == "MNAR"
+        assert res.loc["csat", "lien_cible_significatif"]
+        assert res.loc["csat", "p_value_cible"] < 0.05
+
+    def test_csat_mnar_taux_churn_contraste(self) -> None:
+        """Le taux de churn doit être significativement plus élevé chez les CSAT manquants."""
+        res = analyser_manquance(_df_mnar_csat(300), "churn")
+        taux_manquant = res.loc["csat", "taux_churn_si_manquant"]
+        taux_renseigne = res.loc["csat", "taux_churn_si_renseigne"]
+        assert taux_manquant > taux_renseigne
+
+    def test_csat_mnar_recommandation_indicateur(self) -> None:
+        """La recommandation MNAR doit mentionner la création d'un indicateur de manquance."""
+        res = analyser_manquance(_df_mnar_csat(300), "churn")
+        assert "indicateur" in res.loc["csat", "recommandation"].lower()
+
+    def test_mcar_detecte(self) -> None:
+        res = analyser_manquance(_df_mcar(500), "churn")
+        assert "feature_aleatoire" in res.index
+        assert res.loc["feature_aleatoire", "mecanisme_propose"] == "MCAR"
+        assert not res.loc["feature_aleatoire", "lien_cible_significatif"]
+
+    def test_mar_detecte(self) -> None:
+        res = analyser_manquance(_df_mar(500), "churn")
+        assert "score_mar" in res.index
+        assert res.loc["score_mar", "mecanisme_propose"] == "MAR"
+
+    def test_taux_manquants_correct(self) -> None:
+        df = pd.DataFrame(
+            {
+                "churn": [0, 1, 0, 1],
+                "csat": [4.0, float("nan"), 3.0, float("nan")],
+            }
+        )
+        res = analyser_manquance(df, "churn")
+        assert res.loc["csat", "taux_manquants"] == pytest.approx(0.5)
+
+    def test_df_sans_manquants_retourne_vide(self) -> None:
+        df = pd.DataFrame({"churn": [0, 1], "mrr": [100.0, 200.0]})
+        res = analyser_manquance(df, "churn")
+        assert isinstance(res, pd.DataFrame)
+        assert len(res) == 0
+
+    def test_cible_absente_leve_valueerror(self) -> None:
+        df = pd.DataFrame({"mrr": [100.0, float("nan")]})
+        with pytest.raises(ValueError, match="cible"):
+            analyser_manquance(df, "churn")
+
+    def test_valeurs_p_entre_0_et_1(self) -> None:
+        res = analyser_manquance(_df_mnar_csat(100), "churn")
+        for p in res["p_value_cible"].dropna():
+            assert 0.0 <= p <= 1.0
+
+    def test_mecanisme_propose_valeurs_valides(self) -> None:
+        res = analyser_manquance(_df_mnar_csat(100), "churn")
+        assert set(res["mecanisme_propose"]).issubset({"MCAR", "MAR", "MNAR"})
+
+    def test_confiance_valeurs_valides(self) -> None:
+        res = analyser_manquance(_df_mnar_csat(100), "churn")
+        assert set(res["confiance"]).issubset({"faible", "modérée", "élevée"})
+
+    def test_df_non_modifie_en_place(self) -> None:
+        df = _df_mnar_csat(50)
+        original = df.copy()
+        analyser_manquance(df, "churn")
+        pd.testing.assert_frame_equal(df, original)
+
 
 # ---------------------------------------------------------------------------
 # analyser_doublons
