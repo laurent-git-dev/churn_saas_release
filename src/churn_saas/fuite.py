@@ -8,6 +8,7 @@ Trois fonctions principales :
 
 from __future__ import annotations
 
+import math
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -68,6 +69,16 @@ _EXCLURE_AUTO: set[str] = {
 # ---------------------------------------------------------------------------
 # Helpers privés
 # ---------------------------------------------------------------------------
+
+
+def _est_num_serie(serie: pd.Series) -> bool:
+    """Vrai si ≥ 50 % des valeurs non-nulles sont numériques."""
+    if pd.api.types.is_numeric_dtype(serie):
+        return True
+    n = int(serie.dropna().shape[0])
+    if n == 0:
+        return False
+    return int(pd.to_numeric(serie, errors="coerce").notna().sum()) / n > 0.5
 
 
 def _preparer_X(df: pd.DataFrame, colonnes: list[str]) -> pd.DataFrame:
@@ -425,3 +436,212 @@ def caracteriser_clv(df: pd.DataFrame) -> dict[str, Any]:
         "formule_valeur_risque": formule,
         "avertissement": avertissement,
     }
+
+
+def cribler_leurres(
+    df: pd.DataFrame,
+    cible: str,
+    colonnes: list[str],
+    seuil_redondance: float = 0.70,
+) -> pd.DataFrame:
+    """Criblage des colonnes leurres — verdict provisoire fondé sur preuves convergentes.
+
+    Trois niveaux de preuve (point de vigilance n°5) :
+
+    1. **Association marginale** avec la cible : V de Cramér / AUC Mann-Whitney,
+       p-value corrigée Benjamini-Hochberg.
+    2. **Redondance** avec les variables de référence : max V de Cramér (catégorielles)
+       ou max |r de Pearson| (numériques) — pour écarter l'hypothèse de la jumelle.
+    3. **(§12) Permutation importance + drop-column importance** — colonnes réservées
+       ``permutation_imp`` et ``drop_column_imp``, renseignées en section 12.
+
+    Le verdict est **provisoire** : une importance nulle ne prouve pas qu'une variable
+    est un leurre si elle est redondante avec une autre (point de vigilance n°5).
+
+    Parameters
+    ----------
+    df :
+        DataFrame source (colonnes numériques ou texte tolérées).
+    cible :
+        Colonne binaire cible (0/1).
+    colonnes :
+        Colonnes à cribler — en général ``config.COLONNES_LEURRES_SUSPECTES``.
+    seuil_redondance :
+        Seuil V de Cramér (catégorielles) ou |r| (numériques) au-delà duquel
+        une variable est déclarée « jumelle » d'une autre.
+
+    Returns
+    -------
+    DataFrame indexé par colonne avec colonnes :
+    ``type``, ``association_marginale``, ``p_value_BH``, ``significatif_BH``,
+    ``max_redondance``, ``variable_jumelle``, ``permutation_imp``,
+    ``drop_column_imp``, ``verdict_provisoire``.
+    """
+    if cible not in df.columns:
+        raise ValueError(f"Colonne cible '{cible}' absente du DataFrame.")
+
+    presentes = [c for c in colonnes if c in df.columns]
+    if not presentes:
+        raise ValueError("Aucune des colonnes spécifiées n'est présente dans le DataFrame.")
+
+    y = pd.to_numeric(df[cible], errors="coerce").dropna().astype(int)
+    if y.nunique() < 2:
+        raise ValueError("La cible doit être binaire (0/1).")
+
+    # Variables de référence pour la redondance (hors colonnes criblées, cible, interdites)
+    refs_exclues = set(presentes) | {cible} | set(config.COLONNES_INTERDITES) | _EXCLURE_AUTO
+    refs = [c for c in df.columns if c not in refs_exclues]
+
+    lignes: list[dict[str, Any]] = []
+
+    for col in presentes:
+        serie = df.loc[y.index, col]
+        idx_valides = y.index.intersection(serie.dropna().index)
+
+        if len(idx_valides) < 20:
+            logger.warning("cribler_leurres : {} — moins de 20 valeurs valides, ignorée.", col)
+            continue
+
+        if _est_num_serie(serie.loc[idx_valides]):
+            # --- Variable numérique ---
+            num = pd.to_numeric(serie.loc[idx_valides], errors="coerce").dropna()
+            idx_num = y.index.intersection(num.index)
+            y_num = y.loc[idx_num].astype(int)
+            if y_num.nunique() < 2:
+                continue
+            try:
+                auc = float(roc_auc_score(y_num, num.loc[idx_num]))
+                auc = max(auc, 1.0 - auc)
+            except Exception:
+                auc = 0.5
+            g0 = num.loc[idx_num][y_num == 0].dropna()
+            g1 = num.loc[idx_num][y_num == 1].dropna()
+            p = (
+                float(scipy_stats.mannwhitneyu(g0, g1, alternative="two-sided").pvalue)
+                if len(g0) > 0 and len(g1) > 0
+                else 1.0
+            )
+            assoc = auc
+            type_var = "numérique"
+
+            # Redondance : max |r de Pearson| avec les numériques de référence
+            redondance_max = 0.0
+            jumelle = ""
+            for ref in refs:
+                if ref not in df.columns:
+                    continue
+                ref_num = pd.to_numeric(df.loc[idx_num, ref], errors="coerce")
+                if not _est_num_serie(ref_num) or ref_num.notna().mean() < 0.5:
+                    continue
+                mask_r = num.loc[idx_num].notna() & ref_num.notna()
+                if mask_r.sum() < 20:
+                    continue
+                try:
+                    r_val, _ = scipy_stats.pearsonr(num.loc[idx_num][mask_r], ref_num[mask_r])
+                    if abs(r_val) > redondance_max:
+                        redondance_max = abs(r_val)
+                        jumelle = ref
+                except Exception:
+                    continue
+
+        else:
+            # --- Variable catégorielle ---
+            cat = serie.loc[idx_valides].astype(str)
+            y_cat = y.loc[idx_valides]
+            ct = pd.crosstab(cat, y_cat)
+            if ct.shape[0] < 2 or ct.shape[1] < 2:
+                continue
+            result_chi2 = scipy_stats.chi2_contingency(ct)
+            chi2_stat = float(result_chi2.statistic)
+            p = float(result_chi2.pvalue)
+            n = int(ct.to_numpy().sum())
+            v = math.sqrt(max(0.0, chi2_stat / (n * (min(ct.shape) - 1))))
+            assoc = v
+            type_var = "catégorielle"
+
+            # Redondance : max V de Cramér avec les catégorielles de référence
+            redondance_max = 0.0
+            jumelle = ""
+            for ref in refs:
+                if ref not in df.columns:
+                    continue
+                ref_s = df.loc[idx_valides, ref]
+                if _est_num_serie(ref_s.dropna()):
+                    continue
+                mask_r = cat.notna() & ref_s.notna()
+                if mask_r.sum() < 20:
+                    continue
+                try:
+                    ct_r = pd.crosstab(cat[mask_r], ref_s[mask_r].astype(str))
+                    if ct_r.shape[0] < 2 or ct_r.shape[1] < 2:
+                        continue
+                    res_r = scipy_stats.chi2_contingency(ct_r)
+                    n_r = int(ct_r.to_numpy().sum())
+                    v_r = math.sqrt(
+                        max(0.0, float(res_r.statistic) / (n_r * (min(ct_r.shape) - 1)))
+                    )
+                    if v_r > redondance_max:
+                        redondance_max = v_r
+                        jumelle = ref
+                except Exception:
+                    continue
+
+        lignes.append(
+            {
+                "colonne": col,
+                "type": type_var,
+                "association_marginale": round(assoc, 4),
+                "p_value_brute": p,
+                "max_redondance": round(redondance_max, 4),
+                "variable_jumelle": jumelle,
+            }
+        )
+
+    if not lignes:
+        raise ValueError("Aucune colonne valide pour le criblage des leurres.")
+
+    tableau = pd.DataFrame(lignes)
+
+    pvals_corr = scipy_stats.false_discovery_control(
+        tableau["p_value_brute"].to_numpy(), method="bh"
+    )
+    tableau["p_value_BH"] = pvals_corr
+    tableau["significatif_BH"] = pvals_corr < 0.05
+
+    # Colonnes réservées pour §12
+    tableau["permutation_imp"] = float("nan")
+    tableau["drop_column_imp"] = float("nan")
+
+    def _verdict(row: pd.Series) -> str:
+        if bool(row["significatif_BH"]):
+            return "potentiellement utile — à confirmer en §12"
+        if float(row["max_redondance"]) >= seuil_redondance:
+            return "redondant — importance nulle ≠ leurre (point vigilance n°5)"
+        return "leurre probable — à confirmer en §12"
+
+    tableau["verdict_provisoire"] = tableau.apply(_verdict, axis=1)
+
+    for _, row in tableau.iterrows():
+        logger.info(
+            "cribler_leurres : {} → {} | assoc={:.4f}, p_BH={:.2e}, redondance={:.4f} | {}",
+            row["colonne"],
+            row["type"],
+            row["association_marginale"],
+            row["p_value_BH"],
+            row["max_redondance"],
+            row["verdict_provisoire"],
+        )
+
+    return tableau.set_index("colonne")[
+        [
+            "type",
+            "association_marginale",
+            "p_value_BH",
+            "significatif_BH",
+            "max_redondance",
+            "variable_jumelle",
+            "permutation_imp",
+            "drop_column_imp",
+            "verdict_provisoire",
+        ]
+    ]

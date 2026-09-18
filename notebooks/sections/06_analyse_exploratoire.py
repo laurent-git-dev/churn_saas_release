@@ -432,42 +432,243 @@ display(
 )
 
 # %% [markdown]
-# **Ce qu'il faut retenir — section 6.**
+# ### 6.10 Criblage des leurres — verdict provisoire
 #
-# 1. **Déséquilibre de classes** : taux de churn ≈ {_prevalence:.0%} — l'accuracy est
-#    une métrique trompeuse ; la **PR-AUC** est la métrique principale pour ce projet.
-# 2. **Fuite temporelle démontrée** : `sante_compte_fin_periode` affiche une AUC univariée
-#    de {_auc_sante:.4f}, ce qui est physiquement impossible pour une feature légitime.
-#    L'expérience contrôlée (§6.5) chiffre le gain artificiel à {exp.delta_auc_roc:+.4f}
-#    en AUC-ROC. La variable est exclue par `config.COLONNES_INTERDITES`.
-# 3. **Fuite sémantique + RGPD** : `commentaire_csm` encode des jugements du CSM sur le
-#    risque de départ — fuite fonctionnelle ET données potentiellement personnelles.
-#    Exclu par `COLONNES_LEURRES_SUSPECTES`.
-# 4. **CLV historique** : `valeur_vie_client_eur` est une CLV {res_clv['nature_clv']} ;
-#    la valeur à risque sera calculée en §12 avec la formule
-#    `P(churn) × MRR × horizon × marge_brute`.
-# 5. **client_id** : identifiant technique — exclu par `COLONNES_INTERDITES` pour éviter
-#    la mémorisation d'entité.
+# L'énoncé identifie quatre variables leurres dans `config.COLONNES_LEURRES_SUSPECTES`.
+# Conformément au **point de vigilance n°5**, une importance de permutation nulle ne suffit
+# pas à conclure : une variable **redondante** avec une autre donne aussi une importance
+# proche de zéro. On applique donc trois preuves convergentes :
+#
+# 1. **Association marginale** avec la cible — V de Cramér (chi2, p-value Benjamini-Hochberg) ;
+# 2. **Contrôle de redondance** — max V de Cramér avec les catégorielles légitimes,
+#    pour écarter l'hypothèse de la variable jumelle ;
+# 3. **(§12) Permutation importance + drop-column importance** — verdict définitif.
+
+# %%
+tableau_leurres = fuite.cribler_leurres(
+    df_eda, cible="churn", colonnes=config.COLONNES_LEURRES_SUSPECTES
+)
+display(tableau_leurres)
+
+# %%
+_leurres_probables = tableau_leurres[
+    tableau_leurres["verdict_provisoire"].str.startswith("leurre probable")
+].index.tolist()
+_redondants = tableau_leurres[
+    tableau_leurres["verdict_provisoire"].str.startswith("redondant")
+].index.tolist()
+_potentiellement_utiles = tableau_leurres[
+    tableau_leurres["verdict_provisoire"].str.startswith("potentiellement")
+].index.tolist()
+
+_fmt = lambda lst: ("`" + "`, `".join(lst) + "`") if lst else "—"  # noqa: E731
+
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** Sur les {len(config.COLONNES_LEURRES_SUSPECTES)} leurres "
+        f"suspectes : **{len(_leurres_probables)} leurre(s) probable(s)** "
+        f"({_fmt(_leurres_probables)}) — association marginale non significative (p_BH > 0,05) "
+        f"et faible redondance avec les autres variables. "
+        f"**{len(_redondants)} redondant(s)** ({_fmt(_redondants)}) — pas d'association directe "
+        f"mais corrélé à d'autres features : l'importance de permutation seule conclurait à "
+        f"tort (point de vigilance n°5). "
+        f"**{len(_potentiellement_utiles)} potentiellement utile(s)** "
+        f"({_fmt(_potentiellement_utiles)}) — association BH-significative détectée. "
+        f"\n\nLe verdict reste **provisoire** — permutation importance et drop-column "
+        f"importance en §12 apporteront la preuve définitive. Note : `commentaire_csm` est "
+        f"exclu indépendamment du test statistique (fuite sémantique + RGPD, §6.6)."
+    )
+)
+
+# %% [markdown]
+# ### 6.11 Structure temporelle — split temporel possible ?
+#
+# `date_souscription` enregistre la date d'entrée du client dans le portefeuille.
+# Si les souscriptions s'étalent sur une durée suffisante (≥ 12 mois), un **split temporel**
+# est préférable au split aléatoire : il reproduit les conditions réelles de déploiement —
+# le modèle voit uniquement les clients passés et prédit sur les clients récents, sans
+# aucune contamination future dans l'ensemble d'entraînement.
+
+# %%
+_col_date = "date_souscription"
+_dates = pd.to_datetime(df_brut[_col_date], dayfirst=True, errors="coerce")
+_n_dates_valides = int(_dates.notna().sum())
+_n_dates_manquantes = int(_dates.isna().sum())
+_d_min = _dates.min()
+_d_max = _dates.max()
+_duree_mois = (_d_max - _d_min).days / 30.44
+
+# Distribution mensuelle des souscriptions
+_par_mois = _dates.dt.to_period("M").value_counts().sort_index()
+
+# Date de split candidate : 80e percentile (80 % train, 20 % test)
+_dates_triees = _dates.dropna().sort_values()
+_date_split = _dates_triees.iloc[int(_n_dates_valides * 0.80)]
+_n_train_temp = int((_dates <= _date_split).sum())
+_n_test_temp = int((_dates > _date_split).sum())
+_seuil_test_min = 200
+_split_temporel_possible = _duree_mois >= 12.0 and _n_test_temp >= _seuil_test_min
+
+print(f"Plage : {_d_min.date()} → {_d_max.date()} ({_duree_mois:.1f} mois)")
+print(f"Dates manquantes : {_n_dates_manquantes} ({_n_dates_manquantes / len(df_brut):.1%})")
+print(f"Date de split candidate (80e pct) : {_date_split.date()}")
+print(f"Train temporel (≤ split) : {_n_train_temp} | Test temporel (> split) : {_n_test_temp}")
+print(f"Split temporel recommandé : {_split_temporel_possible}")
+
+# %%
+fig_dates, ax_dates = viz.figure(
+    "structure_temporelle",
+    "Souscriptions par mois — structure temporelle",
+    taille=(12.0, 4.5),
+)
+ax_dates.bar(
+    range(len(_par_mois)),
+    _par_mois.values,
+    color=viz.couleur(0),
+    edgecolor="white",
+    linewidth=0.4,
+    alpha=0.85,
+)
+_split_period = _date_split.to_period("M")
+_idx_split_plot = (
+    list(_par_mois.index).index(_split_period)
+    if _split_period in _par_mois.index
+    else None
+)
+if _idx_split_plot is not None:
+    ax_dates.axvline(
+        _idx_split_plot,
+        color=viz.COULEUR_CHURN,
+        linestyle="--",
+        linewidth=1.8,
+        label=(
+            f"Split candidat — {_date_split.strftime('%Y-%m')} "
+            f"({_n_train_temp} train / {_n_test_temp} test)"
+        ),
+    )
+    ax_dates.legend(fontsize=9)
+_step_ticks = max(1, len(_par_mois) // 12)
+ax_dates.set_xticks(range(0, len(_par_mois), _step_ticks))
+ax_dates.set_xticklabels(
+    [str(p) for p in _par_mois.index[::_step_ticks]],
+    rotation=45,
+    ha="right",
+    fontsize=9,
+)
+ax_dates.set_ylabel("Nombre de souscriptions")
+viz.sauvegarder(fig_dates)
+
+# %%
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** Les souscriptions s'étalent sur **{_duree_mois:.1f} mois** "
+        f"({_d_min.date()} → {_d_max.date()}, {_n_dates_manquantes} dates manquantes, "
+        f"convention dayfirst=True appliquée). "
+        + (
+            f"**Split temporel recommandé** : date candidate `{_date_split.date()}` "
+            f"(80e percentile — {_n_train_temp} obs en train, {_n_test_temp} obs en test). "
+            f"Ce split reproduit les conditions de production : le modèle voit uniquement "
+            f"les clients souscrits avant cette date et prédit sur les plus récents. "
+            f"Il évite toute contamination d'information future dans le train."
+            if _split_temporel_possible
+            else (
+                f"**Split temporel déconseillé** "
+                f"({'durée insuffisante (< 12 mois)' if _duree_mois < 12.0 else 'durée suffisante'}"
+                f"{', effectif test insuffisant (' + str(_n_test_temp) + ' < ' + str(_seuil_test_min) + ')' if _n_test_temp < _seuil_test_min else ''}). "
+                f"Un split aléatoire stratifié (80/20, graine `config.RANDOM_SEED`) sera utilisé en §7."
+            )
+        )
+    )
+)
+
+# %% [markdown]
+# ### Conclusion de l'EDA — impact sur la stratégie de modélisation
+#
+# *Liste consolidée des décisions que l'EDA impose à la section 7.*
+# *Chaque point est directement actionnable dans le pipeline de modélisation.*
+
+# %%
+_split_desc = (
+    f"**split temporel** à `{_date_split.date()}` "
+    f"({_n_train_temp} obs train / {_n_test_temp} obs test — 80e pct des souscriptions)"
+    if _split_temporel_possible
+    else "**split aléatoire stratifié** 80/20 (structure temporelle insuffisante)"
+)
+_feats_liste = []
+if _n_paires > 0:
+    _feats_liste.append(
+        f"{_n_paires} paire(s) redondante(s) (|r| ≥ 0,85) : "
+        "supprimer la variable la moins interprétable de chaque paire"
+    )
+if _n_asym > 0:
+    _feats_liste.append(
+        f"{_n_asym} variable(s) à forte asymétrie : log-transformation candidate (à valider en §7)"
+    )
+_feats_liste.append(
+    "`csat` probablement MNAR (insatisfaits ne répondent pas) "
+    "→ créer `csat_manquant` (indicateur binaire 0/1)"
+)
+
+_leurres_probables_str = _fmt(_leurres_probables)
+_redondants_str = _fmt(_redondants)
+
+display(
+    Markdown(
+        "**Décisions actionnables issues de l'EDA — reprises telles quelles en §7 :**\n\n"
+        "1. **Colonnes à exclure** — `config.COLONNES_INTERDITES` "
+        "(`sante_compte_fin_periode`, `valeur_vie_client_eur`, `churn`, `client_id`) + "
+        "`commentaire_csm` (fuite sémantique + RGPD, §6.6) + "
+        "`date_souscription` / `jour_souscription` (non prédictifs comme features brutes ; "
+        "la structure temporelle est exploitée via le type de split, §6.11).\n\n"
+        f"2. **Métrique principale** — **PR-AUC** (prévalence {_prevalence:.1%}, "
+        f"ratio 1:{_ratio:.0f}) ; l'accuracy est trompeuse sur classes déséquilibrées. "
+        f"Seuil minimal *a priori* : `{config.CIBLES_PERFORMANCE['pr_auc_min']:.2f}` (§2).\n\n"
+        f"3. **Type de split** — {_split_desc}.\n\n"
+        "4. **Traitement du déséquilibre** — `class_weight='balanced'` dans le modèle "
+        "retenu (SMOTE décalibre les probabilités, point de vigilance n°4 ; SMOTE testé "
+        "uniquement comme ablation méthodologique pour montrer la dégradation de "
+        "calibration).\n\n"
+        "5. **Features à créer / transformer** — " + " ; ".join(_feats_liste) + ".\n\n"
+        f"6. **Leurres** — verdict provisoire : {len(_leurres_probables)} leurre(s) probable(s) "
+        f"({_leurres_probables_str}), {len(_redondants)} redondant(s) ({_redondants_str}), "
+        f"{len(_potentiellement_utiles)} potentiellement utile(s) ({_fmt(_potentiellement_utiles)}). "
+        "Confirmation par permutation importance + drop-column importance en §12.\n\n"
+        "7. **Valeur à risque** — CLV identifiée comme "
+        f"{res_clv['nature_clv']} "
+        f"(r(CLV, MRR×ancienneté) = {res_clv['r_mrr_x_anciennete']:.3f}) ; "
+        "formule §12 : `P(churn) × MRR × 12 × marge_brute` "
+        "(pas de double-comptage de valeur passée, point de vigilance n°3)."
+    )
+)
 
 # %% [markdown]
 # > ### 📋 Journal de bord — Analyse exploratoire
 # >
-# > **Décisions retenues** — Démonstration contrôlée de la fuite (expérience avec/sans) plutôt
-# > que simple déclaration ; AUC univariée comme heuristique de détection automatique (seuil 0,85).
-# > Exclusion de `commentaire_csm` au titre de la fuite sémantique ET des données personnelles —
-# > double justification robuste au Q&R du jury. CLV caractérisée comme historique (r > 0,70
-# > avec MRR × ancienneté) → formule MRR × horizon × marge retenue pour §12.
+# > **Décisions retenues** — Démonstration contrôlée de la fuite (expérience avec/sans, §6.5)
+# > plutôt que simple déclaration. AUC univariée comme heuristique de détection automatique
+# > (seuil 0,85). Exclusion de `commentaire_csm` au titre de la fuite sémantique ET des données
+# > personnelles — double justification robuste au Q&R. CLV caractérisée comme historique
+# > (r > 0,70 avec MRR × ancienneté) → formule MRR × horizon × marge pour §12.
+# > Criblage des leurres en deux temps (association marginale BH + redondance) : verdict
+# > provisoire ; importance nulle seule aurait été insuffisante (point de vigilance n°5).
+# > Analyse temporelle tranchée par le code — le type de split est justifié par la durée
+# > des souscriptions et l'effectif de test, pas décidé *a priori*.
 # >
 # > **Alternatives écartées** — Supprimer `sante_compte_fin_periode` sans démonstration
-# > (aurait manqué le point de pédagogie exigé par l'énoncé). Inclure `commentaire_csm`
-# > avec NLP (encodage TF-IDF) : hors périmètre, données personnelles, et fuite fonctionnelle
-# > même encodée (le signal encode le jugement du CSM, pas un comportement mesurable).
+# > (aurait manqué le point de pédagogie exigé). Inclure `commentaire_csm` avec NLP
+# > (TF-IDF) : hors périmètre, fuite fonctionnelle même encodée, données personnelles.
+# > Conclure sur les leurres uniquement par importance de permutation (point vigilance n°5).
+# > Utiliser la CLV brute dans la valeur à risque : double-comptage de la valeur passée.
 # >
 # > **Difficultés rencontrées** — Coercition des numériques stockés en texte (héritage §5) :
 # > résolue par un `df_eda` dédié à l'EDA, sans modifier `df_brut` utilisé en aval.
+# > Format de `date_souscription` potentiellement ambigu : convention dayfirst=True appliquée
+# > systématiquement (cohérente avec les données européennes de l'énoncé).
 # >
-# > **Impact sur la suite** — §7 reçoit une liste propre de features candidates, sans aucune
-# > des 4 colonnes interdites. La formule de la valeur à risque est tranchée pour §12.
-# > La démonstration de la fuite est reproductible (graine fixée, même split).
+# > **Impact sur la suite** — §7 reçoit une liste complète et numérotée de décisions
+# > actionnables (colonnes exclues, type de split, traitement du déséquilibre, features à créer).
+# > La conclusion de l'EDA est la seule source de vérité — §7 ne redérivera pas ces choix.
+# > La formule de valeur à risque est tranchée pour §12.
 # >
-# > **Temps passé** — ~1 h (diagnostic automatique + expérience contrôlée + audit CLV).
+# > **Temps passé** — ~1,5 h (diagnostic auto + expérience contrôlée + audit CLV +
+# > criblage leurres + analyse temporelle + conclusion).
