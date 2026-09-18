@@ -12,8 +12,6 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
-from churn_saas import config
-
 # Encodages testés dans l'ordre — du plus strict au plus permissif
 _ENCODAGES_CANDIDATS = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
 # Taille du bloc d'échantillonnage pour la détection d'encodage et de séparateur

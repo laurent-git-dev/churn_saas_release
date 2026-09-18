@@ -4,8 +4,6 @@ Règle : charger_brut() force dtype=str pour préserver les formats d'origine �
 aucune conversion implicite de pandas à ce stade.
 """
 
-from pathlib import Path
-
 import pandas as pd
 from loguru import logger
 
