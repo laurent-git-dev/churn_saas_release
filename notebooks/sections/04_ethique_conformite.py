@@ -416,7 +416,7 @@ def _calculer_biais() -> dict:
     return resultats
 
 
-tables_biais = charger_ou_calculer("biais_sous_groupes", _calculer_biais)
+tables_biais, _ = charger_ou_calculer("biais_sous_groupes.joblib", _calculer_biais)
 
 # %% [markdown]
 # #### 4.4.1 Biais par pays
