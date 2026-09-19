@@ -50,7 +50,7 @@ class CoercionNumerique(BaseEstimator, TransformerMixin):
     def __init__(self, colonnes: list[str] | None = None) -> None:
         self.colonnes = colonnes
 
-    def fit(self, X: pd.DataFrame, y=None) -> "CoercionNumerique":
+    def fit(self, X: pd.DataFrame, y=None) -> CoercionNumerique:
         if self.colonnes is not None:
             self._colonnes_ = [c for c in self.colonnes if c in X.columns]
         else:
@@ -88,7 +88,7 @@ class IndicateursManquance(BaseEstimator, TransformerMixin):
     def __init__(self, colonnes: list[str]) -> None:
         self.colonnes = colonnes
 
-    def fit(self, X: pd.DataFrame, y=None) -> "IndicateursManquance":
+    def fit(self, X: pd.DataFrame, y=None) -> IndicateursManquance:
         self._colonnes_presentes_ = [c for c in self.colonnes if c in X.columns]
         absentes = set(self.colonnes) - set(self._colonnes_presentes_)
         if absentes:
@@ -143,7 +143,7 @@ class AgregatParGroupe(BaseEstimator, TransformerMixin):
             return self.suffixe
         return f"{self.colonne_valeur}_{self.statistique}_par_{self.colonne_groupe}"
 
-    def fit(self, X: pd.DataFrame, y=None) -> "AgregatParGroupe":
+    def fit(self, X: pd.DataFrame, y=None) -> AgregatParGroupe:
         if self.statistique not in self._STATS_AUTORISEES:
             raise ValueError(
                 f"statistique={self.statistique!r} non reconnue. "
@@ -196,7 +196,7 @@ class PlafonnerValeursImpossibles(BaseEstimator, TransformerMixin):
     non des statistiques inférées à partir des données d'entraînement.
     """
 
-    def fit(self, X: pd.DataFrame, y=None) -> "PlafonnerValeursImpossibles":
+    def fit(self, X: pd.DataFrame, y=None) -> PlafonnerValeursImpossibles:
         # Détection par nom de colonne (pas par dtype — coercion peut ne pas être appliquée)
         self._cols_positives_: list[str] = [
             col
@@ -229,8 +229,7 @@ class PlafonnerValeursImpossibles(BaseEstimator, TransformerMixin):
                 X["taux_adoption_pct"], errors="coerce"
             ).clip(0, 100)
 
-        if self._has_contrainte_sieges_:
-            if "utilisateurs_actifs" in X.columns and "sieges_souscrits" in X.columns:
+        if self._has_contrainte_sieges_ and "utilisateurs_actifs" in X.columns and "sieges_souscrits" in X.columns:
                 u = pd.to_numeric(X["utilisateurs_actifs"], errors="coerce")
                 s = pd.to_numeric(X["sieges_souscrits"], errors="coerce")
                 # clip upper= accepte une Series : plafond par ligne

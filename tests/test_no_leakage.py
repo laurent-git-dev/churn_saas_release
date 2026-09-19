@@ -21,7 +21,6 @@ from churn_saas import config
 from churn_saas.features.build import colonnes_features, construire_preprocesseur
 from churn_saas.features.transformers import AgregatParGroupe
 
-
 # ---------------------------------------------------------------------------
 # 1. colonnes_features() ne renvoie jamais une colonne interdite
 # ---------------------------------------------------------------------------
