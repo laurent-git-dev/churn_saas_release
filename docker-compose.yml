@@ -1,0 +1,65 @@
+version: "3.9"
+
+services:
+
+  # ── API de prédiction ────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    ports:
+      - "8000:8000"
+    volumes:
+      # Le modèle entraîné est monté en lecture seule depuis l'hôte
+      - ./artifacts:/app/artifacts:ro
+    environment:
+      # Clé d'API (laisser vide = auth désactivée — ne pas faire en prod)
+      CHURN_API_KEY: ${CHURN_API_KEY:-}
+      CHURN_RATE_LIMIT: ${CHURN_RATE_LIMIT:-60}
+      CHURN_MAX_BODY_BYTES: ${CHURN_MAX_BODY_BYTES:-1048576}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Prometheus ───────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ── Grafana ─────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Dashboard JSON à importer manuellement dans l'interface Grafana
+      # (ou via provisioning — voir monitoring/grafana/dashboard.json)
+      - ./monitoring/grafana:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
