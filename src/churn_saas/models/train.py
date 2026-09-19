@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import mlflow
@@ -398,3 +400,394 @@ def comparer_desequilibre(
 
     tableau = pd.DataFrame(resultats).set_index("approche")
     return tableau, donnees_calibration
+
+
+# ---------------------------------------------------------------------------
+# Empreinte carbone — CodeCarbon
+# ---------------------------------------------------------------------------
+
+
+def _detecter_mode_mesure() -> tuple[str, bool]:
+    """Détecte si CodeCarbon peut mesurer via RAPL ou doit estimer via TDP.
+
+    Sous WSL2, /sys/class/powercap/intel-rapl/ est absent ou non accessible
+    → CodeCarbon bascule sur une estimation TDP × mix électrique du pays.
+
+    Returns (mode_label, is_estimation).
+    """
+    rapl_path = Path("/sys/class/powercap/intel-rapl")
+    if rapl_path.exists():
+        try:
+            if any(rapl_path.iterdir()):
+                return "mesure RAPL", False
+        except PermissionError:
+            pass
+    return "estimation TDP", True
+
+
+def mesurer_empreinte(fonction: Callable[[], Any]) -> tuple[Any, dict[str, Any]]:
+    """Encapsule CodeCarbon pour estimer/mesurer l'empreinte carbone d'une fonction.
+
+    Sous WSL2, CodeCarbon n'a généralement pas accès aux compteurs RAPL et bascule
+    sur une estimation à partir du TDP et du mix électrique national.
+    Cette fonction détecte et expose le mode réellement utilisé.
+
+    Returns
+    -------
+    (résultat, rapport)
+    rapport : dict avec emissions_kg_co2, energy_kwh, duree_s, mode_mesure_carbone,
+              facteur_emission_kg_kwh, is_estimation.
+    """
+    from codecarbon import EmissionsTracker
+
+    mode_mesure, is_estimation = _detecter_mode_mesure()
+    logger.info("CodeCarbon — mode détecté : {}", mode_mesure)
+
+    config.TABLES.mkdir(parents=True, exist_ok=True)
+
+    tracker = EmissionsTracker(
+        project_name="churn_saas",
+        output_dir=str(config.TABLES),
+        output_file="codecarbon_emissions.csv",
+        log_level="error",
+        save_to_file=True,
+        save_to_api=False,
+        tracking_mode="process",
+    )
+
+    tracker.start()
+    resultat = fonction()
+    emissions_kg: float = tracker.stop() or 0.0
+
+    data = tracker.final_emissions_data
+    energy_kwh = float(data.energy_consumed) if data and data.energy_consumed else 0.0
+    duree_s = float(data.duration) if data and data.duration else 0.0
+    facteur = emissions_kg / energy_kwh if energy_kwh > 0 else 0.0
+
+    rapport: dict[str, Any] = {
+        "emissions_kg_co2": float(emissions_kg),
+        "energy_kwh": energy_kwh,
+        "duree_s": duree_s,
+        "mode_mesure_carbone": mode_mesure,
+        "facteur_emission_kg_kwh": facteur,
+        "is_estimation": is_estimation,
+    }
+
+    logger.info(
+        "CodeCarbon — {} — {:.6f} kg CO2 ({:.4f} kWh) en {:.1f} s",
+        mode_mesure,
+        emissions_kg,
+        energy_kwh,
+        duree_s,
+    )
+
+    return resultat, rapport
+
+
+# ---------------------------------------------------------------------------
+# Latence d'inférence
+# ---------------------------------------------------------------------------
+
+
+def mesurer_latence(
+    modele: Any,
+    X: pd.DataFrame,
+    n_unitaire: int = 200,
+) -> dict[str, float | int]:
+    """Mesure la latence d'inférence unitaire (médiane + p95) et batch.
+
+    Le modèle doit être préalablement fitté.
+
+    Parameters
+    ----------
+    modele : pipeline scikit-learn fitté.
+    X : DataFrame de features (même schéma que l'entraînement).
+    n_unitaire : nombre d'appels unitaires — 200 offre une distribution stable.
+
+    Returns
+    -------
+    dict avec : latence_unitaire_ms_mediane, latence_unitaire_ms_p95,
+    latence_batch_5k_s, n_unitaire, n_batch.
+    """
+    xi = X.iloc[[0]]
+    latences_ms: list[float] = []
+
+    for _ in range(n_unitaire):
+        t0 = time.perf_counter()
+        modele.predict_proba(xi)
+        latences_ms.append((time.perf_counter() - t0) * 1000)
+
+    lat_arr = np.array(latences_ms)
+
+    n_batch = min(5_000, len(X))
+    X_batch = X.iloc[:n_batch]
+    t0 = time.perf_counter()
+    modele.predict_proba(X_batch)
+    latence_batch_s = time.perf_counter() - t0
+
+    result: dict[str, float | int] = {
+        "latence_unitaire_ms_mediane": float(np.median(lat_arr)),
+        "latence_unitaire_ms_p95": float(np.percentile(lat_arr, 95)),
+        "latence_batch_5k_s": float(latence_batch_s),
+        "n_unitaire": n_unitaire,
+        "n_batch": n_batch,
+    }
+
+    logger.info(
+        "Latence — unitaire : médiane={:.2f} ms, p95={:.2f} ms | batch ({} lignes) : {:.3f} s",
+        result["latence_unitaire_ms_mediane"],
+        result["latence_unitaire_ms_p95"],
+        n_batch,
+        latence_batch_s,
+    )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Optimisation Optuna — TPE + pruning + SQLite persistant
+# ---------------------------------------------------------------------------
+
+
+def _evaluer_params_defaut(modele_nom: str, X: pd.DataFrame, y: pd.Series) -> float:
+    """PR-AUC moyen (5-fold CV) avec les hyperparamètres par défaut de construire_modeles."""
+    from churn_saas.features.build import construire_preprocesseur
+
+    pre = construire_preprocesseur(X)
+
+    nom = modele_nom.lower()
+    clf: Any
+    if "aléatoire" in nom or "forêt" in nom:
+        clf = RandomForestClassifier(
+            n_estimators=200,
+            class_weight="balanced",
+            random_state=config.RANDOM_SEED,
+            n_jobs=-1,
+        )
+    elif "logistique" in nom or "régression" in nom:
+        clf = LogisticRegression(
+            class_weight="balanced",
+            max_iter=1000,
+            random_state=config.RANDOM_SEED,
+        )
+    else:
+        clf = HistGradientBoostingClassifier(
+            max_iter=300,
+            random_state=config.RANDOM_SEED,
+        )
+
+    pipe = Pipeline([("pre", clone(pre)), ("clf", clf)])
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=config.RANDOM_SEED)
+    pr_aucs: list[float] = []
+    y_arr = np.asarray(y)
+
+    for train_idx, val_idx in cv.split(X, y_arr):
+        pipe.fit(X.iloc[train_idx], y_arr[train_idx])
+        y_proba = pipe.predict_proba(X.iloc[val_idx])[:, 1]
+        pr_aucs.append(float(average_precision_score(y_arr[val_idx], y_proba)))
+
+    return float(np.mean(pr_aucs))
+
+
+def optimiser(
+    modele_nom: str,
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_essais: int = 30,
+) -> dict[str, Any]:
+    """Optimise les hyperparamètres d'un modèle via Optuna (TPE + pruning).
+
+    L'étude est persistée dans un fichier SQLite dans config.TABLES/ :
+    si elle existe déjà, Optuna reprend là où il en était (load_if_exists=True).
+    L'empreinte carbone du tuning est estimée via CodeCarbon.
+
+    Espace de recherche — Forêt aléatoire :
+      n_estimators ∈ {100, 200, 300} ; max_depth ∈ [3, 12] ;
+      min_samples_leaf ∈ [1, 10] ; max_features ∈ {sqrt, log2}.
+
+    Espace de recherche — Gradient boosting :
+      max_iter ∈ [100, 400, step=50] ; learning_rate ∈ [0.01, 0.3, log] ;
+      max_depth ∈ [3, 8] ; l2_regularization ∈ [0.0, 1.0] ;
+      min_samples_leaf ∈ [10, 50].
+
+    Returns
+    -------
+    dict avec : modele_nom, best_params, best_value (PR-AUC), pr_auc_defaut,
+    gain_pr_auc, n_essais_demandes, n_essais_completes, emissions_kg_co2,
+    energy_kwh, duree_s, mode_mesure_carbone, facteur_emission_kg_kwh, is_estimation.
+    """
+    import optuna
+
+    safe_name = (
+        modele_nom.lower()
+        .replace(" ", "_")
+        .replace("—", "")
+        .replace("é", "e")
+        .replace("ê", "e")
+        .strip("_")
+    )
+    storage_path = config.TABLES / f"optuna_{safe_name}.db"
+    config.TABLES.mkdir(parents=True, exist_ok=True)
+
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    study = optuna.create_study(
+        study_name=f"churn_saas_{safe_name}",
+        direction="maximize",
+        sampler=optuna.samplers.TPESampler(seed=config.RANDOM_SEED),
+        pruner=optuna.pruners.MedianPruner(n_warmup_steps=5),
+        storage=f"sqlite:///{storage_path}",
+        load_if_exists=True,
+    )
+
+    n_existants = len([t for t in study.trials if t.state.name == "COMPLETE"])
+    n_restants = max(0, n_essais - n_existants)
+    logger.info(
+        "Optuna — {} : {} essais complets existants, {} à effectuer",
+        modele_nom,
+        n_existants,
+        n_restants,
+    )
+
+    # Évaluation des hyperparamètres par défaut pour quantifier le gain d'Optuna
+    pr_auc_defaut = _evaluer_params_defaut(modele_nom, X, y)
+
+    # Objectif local — X, y capturés depuis la portée englobante (usage mono-processus)
+    def _objectif(trial: Any) -> float:
+        from churn_saas.features.build import construire_preprocesseur
+
+        nom = modele_nom.lower()
+        clf_: Any
+        if "aléatoire" in nom or "forêt" in nom:
+            params = {
+                "n_estimators": trial.suggest_categorical("n_estimators", [100, 200, 300]),
+                "max_depth": trial.suggest_int("max_depth", 3, 12),
+                "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+                "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2"]),
+            }
+            clf_ = RandomForestClassifier(
+                class_weight="balanced",
+                random_state=config.RANDOM_SEED,
+                n_jobs=-1,
+                **params,
+            )
+        elif "logistique" in nom or "régression" in nom:
+            params = {
+                "C": trial.suggest_float("C", 0.001, 100.0, log=True),
+                "max_iter": trial.suggest_categorical("max_iter", [500, 1000, 2000]),
+            }
+            clf_ = LogisticRegression(
+                class_weight="balanced",
+                random_state=config.RANDOM_SEED,
+                solver="lbfgs",
+                **params,
+            )
+        else:
+            params = {
+                "max_iter": trial.suggest_int("max_iter", 100, 400, step=50),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "max_depth": trial.suggest_int("max_depth", 3, 8),
+                "l2_regularization": trial.suggest_float("l2_regularization", 0.0, 1.0),
+                "min_samples_leaf": trial.suggest_int("min_samples_leaf", 10, 50),
+            }
+            clf_ = HistGradientBoostingClassifier(
+                random_state=config.RANDOM_SEED,
+                **params,
+            )
+
+        pre = construire_preprocesseur(X)
+        pipe = Pipeline([("pre", clone(pre)), ("clf", clf_)])
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=config.RANDOM_SEED)
+        pr_aucs_: list[float] = []
+        y_arr = np.asarray(y)
+
+        for pli, (train_idx, val_idx) in enumerate(cv.split(X, y_arr)):
+            pipe.fit(X.iloc[train_idx], y_arr[train_idx])
+            y_proba = pipe.predict_proba(X.iloc[val_idx])[:, 1]
+            pr_aucs_.append(float(average_precision_score(y_arr[val_idx], y_proba)))
+            trial.report(float(np.mean(pr_aucs_)), pli)
+            if trial.should_prune():
+                raise optuna.exceptions.TrialPruned()
+
+        return float(np.mean(pr_aucs_))
+
+    def _lancer_optuna() -> None:
+        if n_restants > 0:
+            study.optimize(_objectif, n_trials=n_restants, show_progress_bar=False)
+
+    _, rapport_carbone = mesurer_empreinte(_lancer_optuna)
+
+    meilleur = study.best_trial
+    best_value = float(meilleur.value) if meilleur.value is not None else 0.0
+    gain = best_value - pr_auc_defaut
+
+    result: dict[str, Any] = {
+        "modele_nom": modele_nom,
+        "best_params": meilleur.params,
+        "best_value": best_value,
+        "pr_auc_defaut": float(pr_auc_defaut),
+        "gain_pr_auc": float(gain),
+        "n_essais_demandes": n_essais,
+        "n_essais_completes": len([t for t in study.trials if t.state.name == "COMPLETE"]),
+        **rapport_carbone,
+    }
+
+    logger.info(
+        "Optuna terminé — best PR-AUC = {:.4f} (défaut = {:.4f}, gain = {:+.4f})",
+        meilleur.value,
+        pr_auc_defaut,
+        gain,
+    )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Reconstruction d'un pipeline avec hyperparamètres optimisés
+# ---------------------------------------------------------------------------
+
+
+def construire_modele_optimise(
+    modele_nom: str,
+    params: dict[str, Any],
+    df_ref: pd.DataFrame,
+) -> Pipeline:
+    """Reconstruit un Pipeline sklearn avec les hyperparamètres optimisés par Optuna.
+
+    Parameters
+    ----------
+    modele_nom : nom du modèle (doit correspondre à la famille utilisée dans optimiser).
+    params : dict de hyperparamètres retournés par optimiser()["best_params"].
+    df_ref : DataFrame de référence pour construire le préprocesseur (non fitté).
+
+    Returns
+    -------
+    Pipeline non fitté, prêt pour .fit(X_train, y_train).
+    """
+    from churn_saas.features.build import construire_preprocesseur
+
+    pre = construire_preprocesseur(df_ref)
+
+    nom = modele_nom.lower()
+    clf: Any
+    if "aléatoire" in nom or "forêt" in nom:
+        clf = RandomForestClassifier(
+            class_weight="balanced",
+            random_state=config.RANDOM_SEED,
+            n_jobs=-1,
+            **params,
+        )
+    elif "logistique" in nom or "régression" in nom:
+        clf = LogisticRegression(
+            class_weight="balanced",
+            random_state=config.RANDOM_SEED,
+            solver="lbfgs",
+            **params,
+        )
+    else:
+        clf = HistGradientBoostingClassifier(
+            random_state=config.RANDOM_SEED,
+            **params,
+        )
+
+    return Pipeline([("pre", clone(pre)), ("clf", clf)])

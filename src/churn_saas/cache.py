@@ -77,7 +77,7 @@ def _sauvegarder(chemin: Path, objet: Any) -> None:
             raise TypeError(
                 f"Extension .parquet requiert un DataFrame pandas, reçu : {type(objet).__name__}."
             )
-        objet.to_parquet(chemin, index=False)
+        objet.to_parquet(chemin, index=True)
     elif suffixe == ".json":
         with chemin.open("w", encoding="utf-8") as fic:
             json.dump(objet, fic, ensure_ascii=False, indent=2)

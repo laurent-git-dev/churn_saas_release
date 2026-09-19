@@ -1,0 +1,18 @@
+{
+  "modele_nom": "B2 — Régression logistique",
+  "best_params": {
+    "C": 68.535705111043,
+    "max_iter": 500
+  },
+  "best_value": 0.7848983764233438,
+  "pr_auc_defaut": 0.7847070677173825,
+  "gain_pr_auc": 0.00019130870596129057,
+  "n_essais_demandes": 30,
+  "n_essais_completes": 30,
+  "emissions_kg_co2": 1.848111968442426e-05,
+  "energy_kwh": 0.00032979031896401183,
+  "duree_s": 54.70996697900409,
+  "mode_mesure_carbone": "estimation TDP",
+  "facteur_emission_kg_kwh": 0.056039000000000005,
+  "is_estimation": true
+}
