@@ -231,16 +231,6 @@ seulement *si*. Ce modèle répond à une question différente et permet de prio
     )
 )
 
-# %% [markdown]
-# **Ce qu'il faut retenir.**
-# La solution livre une PR-AUC de {pr_auc_oof:.4f} (OOF), un gain net annuel estimé à
-# {_gain_annuel:,.0f} € et un ROI de {_roi:.1f}×. Ces résultats sont défendables devant le jury :
-# les chiffres sont produits par du code visible, les hypothèses sont documentées et révisables,
-# et les limites sont énoncées sans les minimiser.
-# La principale limite structurelle est le délai d'obtention des étiquettes en production :
-# la performance du modèle ne sera mesurable qu'au fil des cohortes de renouvellement,
-# ce qui est compensé par un monitoring immédiat de la dérive des entrées (PSI/KS, §13.3).
-
 # %%
 display(
     Markdown(

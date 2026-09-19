@@ -109,3 +109,22 @@ display(env_df.style.hide(axis="index"))
 # | **C7** | Documentation et communication | §10, §14, §15 | Contrat API, table de décision seuil→action, annexes, glossaire |
 # | **C8** | Mesure de performance et impacts | §12 | PR-AUC/ROC-AUC/Brier OOF, seuil économique τ*, SHAP, verdict leurres 3 preuves, KPI |
 # | **C9** | Amélioration continue | §13 | Gate qualité CI/CD, PSI/KS, Evidently, robustesse, playbook réentraînement |
+
+# %% [markdown]
+# > ### 📋 Journal de bord — Page de garde
+# >
+# > **Décisions retenues** — Six champs obligatoires générés par code (auteur, date,
+# > version git, environnement) pour garantir leur mise à jour automatique à chaque
+# > régénération. Grille de couverture C1→C9 alignée sur la nomenclature officielle CISIA
+# > (réconciliée avec §15.4). Le placeholder `[NOM_PRENOM]` reste en attente de
+# > substitution manuelle avant la livraison finale.
+# >
+# > **Alternatives écartées** — Champs renseignés à la main : invalidés à chaque
+# > régénération (`make notebook`) et source d'erreurs humaines.
+# >
+# > **Difficultés rencontrées** — Aucune.
+# >
+# > **Impact sur la suite** — La grille de couverture sert de fil conducteur au jury ;
+# > elle est reproduite en §15.4 avec le détail complet des artefacts de preuve par compétence.
+# >
+# > **Temps passé** — < 30 min.

@@ -632,7 +632,7 @@ display(df_c9)
 
 # %% [markdown]
 # > ### 📋 Journal de bord — Section 13 : Amélioration continue
-#
+# >
 # > **Décisions retenues** — Flow de réentraînement en Python pur (repli Prefect) :
 # > Prefect n'est pas installé dans l'environnement de certification ; le flow Python pur
 # > implémente la même logique (idempotence, retries, gate, promote) sans infrastructure.
@@ -640,19 +640,19 @@ display(df_c9)
 # > Deux règles d'alerte Prometheus calibrées pour éviter la fatigue d'alerte (délais
 # > `for: 1m` et `for: 5m`). Délai d'obtention des étiquettes traité explicitement
 # > via le groupe témoin (§4) et l'évaluation par cohortes.
-#
+# >
 # > **Alternatives écartées** — Prefect Cloud (infrastructure supplémentaire non
 # > disponible lors de la certification) ; Airflow (trop lourd pour un projet mono-équipe) ;
 # > alertes sur latence p99 plutôt que latence moyenne (trop volatile sur petit volume).
-#
+# >
 # > **Difficultés rencontrées** — Idempotence du flow : les marqueurs de date créent
 # > un couplage temporel (un flow déjà exécuté le même jour est ignoré) ; résolu en
 # > documentant l'option `--forcer`. Délai d'étiquettes : pas de solution technique
 # > parfaite — le groupe témoin est la seule mesure rigoureuse mais coûteuse
 # > (5 % des comptes à risque non traités).
-#
+# >
 # > **Impact sur la suite** — Les trois items C9 sont traçables. La section 14
 # > (Conclusion) peut s'appuyer sur ce tableau de synthèse pour conclure sur la
 # > maturité MLOps du projet.
-#
+# >
 # > **Temps passé** — 1 journée (rédaction + code + tests).
