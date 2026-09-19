@@ -8,8 +8,8 @@ from collections import defaultdict
 from typing import Annotated
 
 from fastapi import Header, HTTPException, Request, status
-from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 # Historique des timestamps par IP pour la fenêtre glissante
 _historique: dict[str, list[float]] = defaultdict(list)
@@ -74,7 +74,7 @@ async def verifier_rate_limit(request: Request) -> None:
 class LimiteCorpsMiddleware(BaseHTTPMiddleware):
     """Middleware ASGI — rejette avec 413 les corps dépassant CHURN_MAX_BODY_BYTES."""
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         max_octets = _get_max_body_bytes()
         longueur = request.headers.get("content-length")
         if longueur and int(longueur) > max_octets:

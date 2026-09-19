@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -30,7 +31,7 @@ _MAX_BATCH = 1_000
 
 
 @asynccontextmanager
-async def lifespan(application: FastAPI):
+async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     get_model_store().charger()
     yield
 
@@ -97,7 +98,7 @@ def _valeur_a_risque(demande: DemandePredicton, probabilite: float) -> float:
     return round(probabilite * demande.revenu_mensuel_recurrent_eur * horizon, 2)
 
 
-def _decision(probabilite: float, seuil: float) -> str:
+def _decision(probabilite: float, seuil: float) -> Literal["ALERTE_ROUGE", "SURVEILLANCE", "OK"]:
     if probabilite >= max(seuil + 0.20, 0.60):
         return "ALERTE_ROUGE"
     if probabilite >= seuil:

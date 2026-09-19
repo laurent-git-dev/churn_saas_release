@@ -646,7 +646,7 @@ def retrain_cmd() -> None:
     if _CHEMIN_META.exists():
         with _CHEMIN_META.open() as fic:
             meta_champ = json.load(fic)
-        hyperparametres = meta_champ.get("hyperparametres", hyperparametres)  # type: ignore[assignment]
+        hyperparametres = meta_champ.get("hyperparametres", hyperparametres)
 
     pre = construire_preprocesseur(X)
     clf = HistGradientBoostingClassifier(
