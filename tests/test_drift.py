@@ -24,9 +24,10 @@ from churn_saas.monitoring.drift import (
     ks_test,
     psi,
     simuler_derive,
+)
+from churn_saas.monitoring.drift import (
     tester_robustesse as evaluer_robustesse,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
