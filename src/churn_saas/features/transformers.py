@@ -60,7 +60,11 @@ class CoercionNumerique(BaseEstimator, TransformerMixin):
                 if pd.api.types.is_object_dtype(X[col])
                 and pd.to_numeric(X[col], errors="coerce").notna().mean() > 0.8
             ]
-        logger.debug("CoercionNumerique.fit — {} colonnes détectées : {}", len(self._colonnes_), self._colonnes_)
+        logger.debug(
+            "CoercionNumerique.fit — {} colonnes détectées : {}",
+            len(self._colonnes_),
+            self._colonnes_,
+        )
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
@@ -171,11 +175,7 @@ class AgregatParGroupe(BaseEstimator, TransformerMixin):
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         X = X.copy()
         nom = self._nom_feature()
-        X[nom] = (
-            X[self.colonne_groupe]
-            .map(self._aggregats_par_groupe_)
-            .fillna(self._repli_global_)
-        )
+        X[nom] = X[self.colonne_groupe].map(self._aggregats_par_groupe_).fillna(self._repli_global_)
         logger.debug(
             "AgregatParGroupe.transform — feature '{}' créée ({} replis sur modalité inconnue)",
             nom,
@@ -225,14 +225,18 @@ class PlafonnerValeursImpossibles(BaseEstimator, TransformerMixin):
                 X[col] = numerique.clip(lower=0)
 
         if self._has_taux_adoption_ and "taux_adoption_pct" in X.columns:
-            X["taux_adoption_pct"] = pd.to_numeric(
-                X["taux_adoption_pct"], errors="coerce"
-            ).clip(0, 100)
+            X["taux_adoption_pct"] = pd.to_numeric(X["taux_adoption_pct"], errors="coerce").clip(
+                0, 100
+            )
 
-        if self._has_contrainte_sieges_ and "utilisateurs_actifs" in X.columns and "sieges_souscrits" in X.columns:
-                u = pd.to_numeric(X["utilisateurs_actifs"], errors="coerce")
-                s = pd.to_numeric(X["sieges_souscrits"], errors="coerce")
-                # clip upper= accepte une Series : plafond par ligne
-                X["utilisateurs_actifs"] = u.clip(upper=s)
+        if (
+            self._has_contrainte_sieges_
+            and "utilisateurs_actifs" in X.columns
+            and "sieges_souscrits" in X.columns
+        ):
+            u = pd.to_numeric(X["utilisateurs_actifs"], errors="coerce")
+            s = pd.to_numeric(X["sieges_souscrits"], errors="coerce")
+            # clip upper= accepte une Series : plafond par ligne
+            X["utilisateurs_actifs"] = u.clip(upper=s)
 
         return X

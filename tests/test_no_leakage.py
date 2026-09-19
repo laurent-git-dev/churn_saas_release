@@ -59,12 +59,12 @@ class TestColonnesFeaturesSansLeak:
         )
         num, cat = colonnes_features(df_propre)
         colonnes_interdites = set(config.COLONNES_INTERDITES)
-        assert not (set(num) & colonnes_interdites), (
-            f"Colonnes interdites trouvées dans les numériques : {set(num) & colonnes_interdites}"
-        )
-        assert not (set(cat) & colonnes_interdites), (
-            f"Colonnes interdites trouvées dans les catégorielles : {set(cat) & colonnes_interdites}"
-        )
+        assert not (
+            set(num) & colonnes_interdites
+        ), f"Colonnes interdites trouvées dans les numériques : {set(num) & colonnes_interdites}"
+        assert not (
+            set(cat) & colonnes_interdites
+        ), f"Colonnes interdites trouvées dans les catégorielles : {set(cat) & colonnes_interdites}"
 
     def test_toutes_colonnes_interdites_provoquent_une_erreur(self) -> None:
         """Chaque colonne interdite, prise seule, déclenche l'exception."""
@@ -119,13 +119,13 @@ class TestAgregatParGroupeAntiLeak:
 
         # Les lignes A du test doivent afficher 150.0 (médiane du train), PAS 1500.0
         valeurs_a = test_transforme.loc[test_transforme["segment"] == "A", nom]
-        assert valeurs_a.tolist() == pytest.approx([150.0, 150.0]), (
-            f"Attendu 150.0 (médiane train pour A), obtenu : {valeurs_a.tolist()}"
-        )
+        assert valeurs_a.tolist() == pytest.approx(
+            [150.0, 150.0]
+        ), f"Attendu 150.0 (médiane train pour A), obtenu : {valeurs_a.tolist()}"
         valeurs_b = test_transforme.loc[test_transforme["segment"] == "B", nom]
-        assert valeurs_b.tolist() == pytest.approx([350.0, 350.0]), (
-            f"Attendu 350.0 (médiane train pour B), obtenu : {valeurs_b.tolist()}"
-        )
+        assert valeurs_b.tolist() == pytest.approx(
+            [350.0, 350.0]
+        ), f"Attendu 350.0 (médiane train pour B), obtenu : {valeurs_b.tolist()}"
 
     def test_repli_global_pour_modalite_inconnue(self) -> None:
         train, _ = self._construire_train_test_divergents()
@@ -154,18 +154,14 @@ class TestAgregatParGroupeAntiLeak:
         train = pd.DataFrame(
             {
                 "seg": np.repeat(["X", "Y"], 50),
-                "val": np.concatenate(
-                    [rng.normal(10.0, 0.01, 50), rng.normal(20.0, 0.01, 50)]
-                ),
+                "val": np.concatenate([rng.normal(10.0, 0.01, 50), rng.normal(20.0, 0.01, 50)]),
             }
         )
         # Test : groupe X → 100, groupe Y → 200 (×10)
         test = pd.DataFrame(
             {
                 "seg": np.repeat(["X", "Y"], 25),
-                "val": np.concatenate(
-                    [rng.normal(100.0, 0.01, 25), rng.normal(200.0, 0.01, 25)]
-                ),
+                "val": np.concatenate([rng.normal(100.0, 0.01, 25), rng.normal(200.0, 0.01, 25)]),
             }
         )
 
@@ -206,7 +202,7 @@ class TestPipelineCVIsolation:
         """
         mrr = np.concatenate(
             [
-                np.full(n // 2, 100.0),   # train si split [0:n//2]
+                np.full(n // 2, 100.0),  # train si split [0:n//2]
                 np.full(n // 2, 5000.0),  # validation si split [0:n//2]
             ]
         )
@@ -220,7 +216,7 @@ class TestPipelineCVIsolation:
         n = len(df)
 
         X_train = df.iloc[: n // 2]  # mrr ≈ 100
-        X_val = df.iloc[n // 2 :]    # mrr ≈ 5000
+        X_val = df.iloc[n // 2 :]  # mrr ≈ 5000
         y_train = y.iloc[: n // 2]
 
         preprocesseur = construire_preprocesseur(X_train)
@@ -266,18 +262,18 @@ class TestPipelineCVIsolation:
                     ("pre", construire_preprocesseur(X_train)),
                     (
                         "clf",
-                        LogisticRegression(
-                            max_iter=200, random_state=config.RANDOM_SEED
-                        ),
+                        LogisticRegression(max_iter=200, random_state=config.RANDOM_SEED),
                     ),
                 ]
             )
             pipeline.fit(X_train, y_train)
 
             # Les médianes apprises doivent correspondre au train, pas au val
-            imputer = pipeline.named_steps["pre"].named_transformers_["numerique"].named_steps[
-                "imputation"
-            ]
+            imputer = (
+                pipeline.named_steps["pre"]
+                .named_transformers_["numerique"]
+                .named_steps["imputation"]
+            )
             mediane_mrr_apprise = imputer.statistics_[0]
 
             mediane_mrr_train = X_train["mrr"].median()
@@ -313,13 +309,11 @@ class TestPipelineCVIsolation:
         )
         # construire_preprocesseur doit gérer le df complet sans erreur
         preprocesseur = construire_preprocesseur(df_complet)
-        X_train = df_complet.drop(
-            columns=config.COLONNES_INTERDITES + ["churn"], errors="ignore"
-        )
+        X_train = df_complet.drop(columns=config.COLONNES_INTERDITES + ["churn"], errors="ignore")
         preprocesseur.fit(X_train)
         # Vérification : le transformeur numérique ne connaît que "mrr"
         cols_numeriques = preprocesseur.transformers[0][2]
         for col_interdite in config.COLONNES_INTERDITES:
-            assert col_interdite not in cols_numeriques, (
-                f"Colonne interdite '{col_interdite}' présente dans le ColumnTransformer numérique."
-            )
+            assert (
+                col_interdite not in cols_numeriques
+            ), f"Colonne interdite '{col_interdite}' présente dans le ColumnTransformer numérique."

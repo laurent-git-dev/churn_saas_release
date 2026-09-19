@@ -55,8 +55,7 @@ def colonnes_features(df: pd.DataFrame) -> tuple[list[str], list[str]]:
     categorielles = [
         col
         for col in df.columns
-        if pd.api.types.is_object_dtype(df[col])
-        or isinstance(df[col].dtype, pd.CategoricalDtype)
+        if pd.api.types.is_object_dtype(df[col]) or isinstance(df[col].dtype, pd.CategoricalDtype)
     ]
     logger.info(
         "colonnes_features — {} numériques, {} catégorielles sélectionnées",
