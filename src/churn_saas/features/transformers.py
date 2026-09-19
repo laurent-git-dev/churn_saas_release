@@ -33,7 +33,7 @@ _PREFIXES_POSITIFS = (
 )
 
 
-class CoercionNumerique(BaseEstimator, TransformerMixin):
+class CoercionNumerique(BaseEstimator, TransformerMixin):  # type: ignore[misc]
     """Répare les numériques stockés en texte (séparateurs, symboles monétaires, espaces).
 
     Délègue à :func:`churn_saas.data.quality.coercer_numeriques`.
@@ -50,7 +50,7 @@ class CoercionNumerique(BaseEstimator, TransformerMixin):
     def __init__(self, colonnes: list[str] | None = None) -> None:
         self.colonnes = colonnes
 
-    def fit(self, X: pd.DataFrame, y=None) -> CoercionNumerique:
+    def fit(self, X: pd.DataFrame, y: object = None) -> CoercionNumerique:
         if self.colonnes is not None:
             self._colonnes_ = [c for c in self.colonnes if c in X.columns]
         else:
@@ -74,7 +74,7 @@ class CoercionNumerique(BaseEstimator, TransformerMixin):
         return resultat
 
 
-class IndicateursManquance(BaseEstimator, TransformerMixin):
+class IndicateursManquance(BaseEstimator, TransformerMixin):  # type: ignore[misc]
     """Ajoute des colonnes booléennes de manquance pour les colonnes MNAR.
 
     Pour chaque colonne `c` dans `colonnes`, crée `{c}_manquant` (True si NaN).
@@ -92,7 +92,7 @@ class IndicateursManquance(BaseEstimator, TransformerMixin):
     def __init__(self, colonnes: list[str]) -> None:
         self.colonnes = colonnes
 
-    def fit(self, X: pd.DataFrame, y=None) -> IndicateursManquance:
+    def fit(self, X: pd.DataFrame, y: object = None) -> IndicateursManquance:
         self._colonnes_presentes_ = [c for c in self.colonnes if c in X.columns]
         absentes = set(self.colonnes) - set(self._colonnes_presentes_)
         if absentes:
@@ -106,7 +106,7 @@ class IndicateursManquance(BaseEstimator, TransformerMixin):
         return X
 
 
-class AgregatParGroupe(BaseEstimator, TransformerMixin):
+class AgregatParGroupe(BaseEstimator, TransformerMixin):  # type: ignore[misc]
     """Agrégat conditionnel au groupe, appris UNIQUEMENT sur le jeu d'entraînement.
 
     C'est le transformer le plus critique vis-à-vis de la fuite : calculer la médiane
@@ -147,7 +147,7 @@ class AgregatParGroupe(BaseEstimator, TransformerMixin):
             return self.suffixe
         return f"{self.colonne_valeur}_{self.statistique}_par_{self.colonne_groupe}"
 
-    def fit(self, X: pd.DataFrame, y=None) -> AgregatParGroupe:
+    def fit(self, X: pd.DataFrame, y: object = None) -> AgregatParGroupe:
         if self.statistique not in self._STATS_AUTORISEES:
             raise ValueError(
                 f"statistique={self.statistique!r} non reconnue. "
@@ -184,7 +184,7 @@ class AgregatParGroupe(BaseEstimator, TransformerMixin):
         return X
 
 
-class PlafonnerValeursImpossibles(BaseEstimator, TransformerMixin):
+class PlafonnerValeursImpossibles(BaseEstimator, TransformerMixin):  # type: ignore[misc]
     """Corrige les incohérences métier détectées en section 5 de l'analyse.
 
     Corrections appliquées (règles fixes — aucune statistique apprise sur le train) :
@@ -196,7 +196,7 @@ class PlafonnerValeursImpossibles(BaseEstimator, TransformerMixin):
     non des statistiques inférées à partir des données d'entraînement.
     """
 
-    def fit(self, X: pd.DataFrame, y=None) -> PlafonnerValeursImpossibles:
+    def fit(self, X: pd.DataFrame, y: object = None) -> PlafonnerValeursImpossibles:
         # Détection par nom de colonne (pas par dtype — coercion peut ne pas être appliquée)
         self._cols_positives_: list[str] = [
             col
