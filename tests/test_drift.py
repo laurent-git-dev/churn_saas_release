@@ -168,7 +168,9 @@ class TestSimulerDerive:
         df, _ = _jeu_synthetique()
         derive = simuler_derive(df, "nouveau_segment")
         # Le MRR max doit être plus élevé avec le nouveau segment
-        assert derive["revenu_mensuel_recurrent_eur"].max() > df["revenu_mensuel_recurrent_eur"].max()
+        assert (
+            derive["revenu_mensuel_recurrent_eur"].max() > df["revenu_mensuel_recurrent_eur"].max()
+        )
 
     def test_anciennete_rajeunissement(self) -> None:
         df, _ = _jeu_synthetique()
@@ -244,9 +246,9 @@ class TestTesterRobustesse:
         bruit = res[res["type_perturbation"] == "bruit_gaussien"].sort_values("niveau")
         pr_aucs = bruit["pr_auc"].tolist()
         # Le PR-AUC à bruit maximal doit être inférieur ou égal au PR-AUC à bruit nul
-        assert pr_aucs[-1] <= pr_aucs[0] + 0.05, (
-            f"PR-AUC devrait décroître avec le bruit, obtenu : {pr_aucs}"
-        )
+        assert (
+            pr_aucs[-1] <= pr_aucs[0] + 0.05
+        ), f"PR-AUC devrait décroître avec le bruit, obtenu : {pr_aucs}"
 
     def test_manquants_croissants_degradation_croissante(self) -> None:
         """PR-AUC doit décroître (ou rester stable) quand le taux de NaN augmente."""
@@ -266,9 +268,9 @@ class TestTesterRobustesse:
         res = evaluer_robustesse(pipe, df, y, niveaux_bruit=[], taux_manquants=taux)
         nan_res = res[res["type_perturbation"] == "valeurs_manquantes"].sort_values("niveau")
         pr_aucs = nan_res["pr_auc"].tolist()
-        assert pr_aucs[-1] <= pr_aucs[0] + 0.05, (
-            f"PR-AUC devrait décroître avec les NaN, obtenu : {pr_aucs}"
-        )
+        assert (
+            pr_aucs[-1] <= pr_aucs[0] + 0.05
+        ), f"PR-AUC devrait décroître avec les NaN, obtenu : {pr_aucs}"
 
     def test_nombre_de_lignes(self) -> None:
         df, y = _jeu_synthetique(n=200)
