@@ -377,9 +377,7 @@ def comparer_desequilibre(
             modele.fit(X_train, y_train)
             y_proba_oof[val_idx] = modele.predict_proba(X_val)[:, 1]
 
-        prob_true, prob_pred = calibration_curve(
-            y_arr, y_proba_oof, n_bins=10, strategy="quantile"
-        )
+        prob_true, prob_pred = calibration_curve(y_arr, y_proba_oof, n_bins=10, strategy="quantile")
         brier = float(brier_score_loss(y_arr, y_proba_oof))
         pr_auc = float(average_precision_score(y_arr, y_proba_oof))
         roc_auc = float(roc_auc_score(y_arr, y_proba_oof))

@@ -25,7 +25,9 @@ from churn_saas.features.build import construire_preprocesseur
 # ---------------------------------------------------------------------------
 
 
-def _jeu_synthetique(n: int = 300, seed: int = config.RANDOM_SEED) -> tuple[pd.DataFrame, pd.Series]:
+def _jeu_synthetique(
+    n: int = 300, seed: int = config.RANDOM_SEED
+) -> tuple[pd.DataFrame, pd.Series]:
     """Génère un DataFrame synthétique avec les features clés et ~20 % de churn.
 
     Paramétrage : les classes restent déséquilibrées (~20 % churn) pour refléter
@@ -66,7 +68,9 @@ def _jeu_synthetique(n: int = 300, seed: int = config.RANDOM_SEED) -> tuple[pd.D
                 "compte_dormant": rng.choice([True, False], taille),
                 "pression_support": rng.uniform(0, 2, taille),
                 "tranche_anciennete": rng.choice(["onboarding", "installation", "mature"], taille),
-                "tranche_integrations": rng.choice(["aucune", "faible", "moderee", "forte"], taille),
+                "tranche_integrations": rng.choice(
+                    ["aucune", "faible", "moderee", "forte"], taille
+                ),
             }
         )
 
