@@ -238,20 +238,24 @@ class TestPipelineCVIsolation:
         )
 
     def test_pipeline_dans_cv_reste_isole(self) -> None:
-        """Simulation de 3 plis de CV : le preprocesseur de chaque pli est fitté
-        uniquement sur le train du pli, jamais sur la validation."""
-        rng = np.random.default_rng(config.RANDOM_SEED)
-        n = 300
-        df = pd.DataFrame(
-            {
-                "mrr": rng.uniform(100, 5000, n),
-                "nb_utilisateurs": rng.integers(1, 50, n).astype(float),
-                "plan": rng.choice(["starter", "pro", "enterprise"], n),
-            }
-        )
-        y = pd.Series(rng.integers(0, 2, n), name="churn")
+        """Simulation de 3 plis de CV avec données bimodales — assertion discriminante.
 
-        skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=config.RANDOM_SEED)
+        mrr[0:200]=100, mrr[200:300]=5000 → médiane globale=100.
+        Dans les plis 1 et 2, le train est bimodal (médiane≈2550) : si le preprocesseur
+        était accidentellement fitté sur le jeu complet, il apprendrait 100 au lieu de 2550
+        et l'assertion échouerait. Avec des données uniformes (ancien test), l'assertion
+        était triviale (écarts ≈ 0) et ne détectait aucune fuite.
+        """
+        n = 300
+        mrr = np.concatenate([np.full(200, 100.0), np.full(100, 5000.0)])
+        plan = np.where(np.arange(n) < 200, "starter", "enterprise")
+        y = pd.Series(np.tile([0, 1], n // 2), name="churn")
+        df = pd.DataFrame({"mrr": mrr, "plan": plan})
+        mediane_jeu_complet = float(df["mrr"].median())  # 100.0
+
+        # shuffle=False : les plis sont des blocs contigus — nécessaire pour que
+        # la structure bimodale soit reflétée dans chaque fold
+        skf = StratifiedKFold(n_splits=3, shuffle=False)
         for train_idx, val_idx in skf.split(df, y):
             X_train = df.iloc[train_idx].reset_index(drop=True)
             X_val = df.iloc[val_idx].reset_index(drop=True)
@@ -268,27 +272,20 @@ class TestPipelineCVIsolation:
             )
             pipeline.fit(X_train, y_train)
 
-            # Les médianes apprises doivent correspondre au train, pas au val
             imputer = (
                 pipeline.named_steps["pre"]
                 .named_transformers_["numerique"]
                 .named_steps["imputation"]
             )
             mediane_mrr_apprise = imputer.statistics_[0]
+            mediane_mrr_train = float(X_train["mrr"].median())
 
-            mediane_mrr_train = X_train["mrr"].median()
-            mediane_mrr_val = X_val["mrr"].median()
-            mediane_jeu_complet = df["mrr"].median()
-
-            # L'écart attendu : la médiane apprise est plus proche du train que du jeu complet
-            ecart_train = abs(mediane_mrr_apprise - mediane_mrr_train)
-            ecart_global = abs(mediane_mrr_apprise - mediane_jeu_complet)
-
-            assert ecart_train < ecart_global + 1.0, (
-                f"Pli en cours : médiane apprise={mediane_mrr_apprise:.1f}, "
-                f"médiane train={mediane_mrr_train:.1f}, "
-                f"médiane jeu complet={mediane_mrr_val:.1f}. "
-                "Le preprocesseur semble fitté sur plus que le train."
+            # La médiane apprise doit être celle du train du pli, pas du jeu complet.
+            # Tolérance 10 : les valeurs sont exactes (100.0 et 5000.0), pas de bruit.
+            assert abs(mediane_mrr_apprise - mediane_mrr_train) < 10.0, (
+                f"Médiane apprise ({mediane_mrr_apprise:.1f}) ne correspond pas à la médiane "
+                f"du train du pli ({mediane_mrr_train:.1f}) — le preprocesseur a peut-être "
+                f"vu des données hors-pli (médiane jeu complet : {mediane_jeu_complet:.1f})."
             )
 
             # La prédiction sur le val ne doit pas lever d'exception
