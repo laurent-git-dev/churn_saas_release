@@ -33,11 +33,16 @@ from churn_saas import cache, config
 # Constantes
 # ---------------------------------------------------------------------------
 
-# Mise en garde obligatoire sur l'importance par impureté (MDI)
+# Mises en garde selon le type de modèle
 _CAVEAT_IMPURETE: str = (
     "⚠️  Biais de cardinalité : l'importance par impureté (MDI) surestime les variables "
     "à forte cardinalité (continus, quasi-identifiants). "
     "À interpréter uniquement en complément de la permutation importance."
+)
+_CAVEAT_COEF: str = (
+    "⚠️  Importance approximée via |coef_| (modèle linéaire). Sensible à l'échelle des "
+    "features et à la régularisation — valide uniquement si les features sont standardisées. "
+    "À compléter impérativement par la permutation importance."
 )
 
 # Seuils pour le verdict final
@@ -103,7 +108,8 @@ def importance_impurete(modele: Any) -> pd.DataFrame:
     Parameters
     ----------
     modele :
-        Modèle entraîné (ou Pipeline sklearn dont le dernier pas a ``feature_importances_``).
+        Modèle entraîné (ou Pipeline sklearn). Supporte les modèles à arbres
+        (``feature_importances_``) et les modèles linéaires (``coef_`` → ``|coef_|``).
 
     Returns
     -------
@@ -114,24 +120,38 @@ def importance_impurete(modele: Any) -> pd.DataFrame:
     Raises
     ------
     AttributeError
-        Si l'estimateur final ne dispose pas de ``feature_importances_``.
+        Si l'estimateur final ne dispose ni de ``feature_importances_`` ni de ``coef_``.
     """
     estimateur = _estimateur_final(modele)
-    if not hasattr(estimateur, "feature_importances_"):
+
+    if hasattr(estimateur, "feature_importances_"):
+        importances: np.ndarray = estimateur.feature_importances_
+        caveat = _CAVEAT_IMPURETE
+    elif hasattr(estimateur, "coef_"):
+        coef = np.asarray(estimateur.coef_)
+        importances = np.abs(coef).flatten()
+        caveat = _CAVEAT_COEF
+    else:
         raise AttributeError(
-            f"L'estimateur {type(estimateur).__name__!r} ne fournit pas de "
-            "feature_importances_. Utiliser un modèle basé sur des arbres "
-            "(RandomForest, HistGradientBoosting…)."
+            f"L'estimateur {type(estimateur).__name__!r} ne fournit ni "
+            "feature_importances_ ni coef_. Méthode non applicable."
         )
 
-    importances: np.ndarray = estimateur.feature_importances_
-
-    if hasattr(estimateur, "feature_names_in_"):
-        noms: list[str] = [str(n) for n in estimateur.feature_names_in_]
-    elif isinstance(modele, Pipeline) and hasattr(modele, "feature_names_in_"):
-        noms = [str(n) for n in modele.feature_names_in_]
+    # Récupère les noms de features depuis le Pipeline (ColumnTransformer) si possible
+    if isinstance(modele, Pipeline) and hasattr(modele[:-1], "get_feature_names_out"):
+        try:
+            noms: list[str] = [str(n) for n in modele[:-1].get_feature_names_out()]
+        except Exception:
+            noms = [f"feature_{i}" for i in range(len(importances))]
+    elif hasattr(estimateur, "feature_names_in_"):
+        noms = [str(n) for n in estimateur.feature_names_in_]
     else:
         noms = [f"feature_{i}" for i in range(len(importances))]
+
+    # Troncature si la longueur ne correspond pas (robustesse)
+    n = min(len(noms), len(importances))
+    noms = noms[:n]
+    importances = importances[:n]
 
     df = (
         pd.DataFrame({"feature": noms, "importance": importances})
@@ -140,9 +160,9 @@ def importance_impurete(modele: Any) -> pd.DataFrame:
     )
     df.insert(0, "rang", range(1, len(df) + 1))
     df["importance"] = df["importance"].round(6)
-    df.attrs["mise_en_garde"] = _CAVEAT_IMPURETE
+    df.attrs["mise_en_garde"] = caveat
 
-    logger.warning("importance_impurete — {}", _CAVEAT_IMPURETE)
+    logger.warning("importance_impurete — {}", caveat)
     logger.info(
         "importance_impurete — top-5 : {}",
         df.head(5)[["feature", "importance"]].to_dict("records"),

@@ -112,11 +112,23 @@ class TestImportanceImpurete:
         assert "mise_en_garde" in df.attrs
         assert "cardinalité" in df.attrs["mise_en_garde"]
 
-    def test_leve_si_pas_de_feature_importances(
+    def test_lr_utilise_coef(
         self, modele_lr_entraine: LogisticRegression
     ) -> None:
-        with pytest.raises(AttributeError, match="feature_importances_"):
-            importance_impurete(modele_lr_entraine)
+        """LR doit fonctionner via |coef_| avec la mise en garde adaptée."""
+        df = importance_impurete(modele_lr_entraine)
+        assert len(df) > 0
+        assert "coef_" in df.attrs["mise_en_garde"] or "linéaire" in df.attrs["mise_en_garde"]
+
+    def test_leve_si_ni_importances_ni_coef(self) -> None:
+        """Un estimateur sans feature_importances_ ET sans coef_ doit lever AttributeError."""
+        from sklearn.base import BaseEstimator, ClassifierMixin
+
+        class _SansImportance(BaseEstimator, ClassifierMixin):
+            pass
+
+        with pytest.raises(AttributeError):
+            importance_impurete(_SansImportance())
 
     def test_fonctionne_avec_pipeline(self, pipeline_entraine: Pipeline) -> None:
         df = importance_impurete(pipeline_entraine)
