@@ -48,7 +48,7 @@ champs_df = pd.DataFrame(
         "Valeur": [
             "Détection de résiliation client SaaS B2B",
             "CISIA — Concevoir et implémenter une solution d'intelligence artificielle",
-            "[NOM_PRENOM]",
+            "Laurent Pottier",
             datetime.date.today().isoformat(),
             f"1.0.0 (commit {git_hash})",
             f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
@@ -116,8 +116,7 @@ display(env_df.style.hide(axis="index"))
 # > **Décisions retenues** — Six champs obligatoires générés par code (auteur, date,
 # > version git, environnement) pour garantir leur mise à jour automatique à chaque
 # > régénération. Grille de couverture C1→C9 alignée sur la nomenclature officielle CISIA
-# > (réconciliée avec §15.4). Le placeholder `[NOM_PRENOM]` reste en attente de
-# > substitution manuelle avant la livraison finale.
+# > (réconciliée avec §15.4). L'auteur est renseigné directement : Laurent Pottier.
 # >
 # > **Alternatives écartées** — Champs renseignés à la main : invalidés à chaque
 # > régénération (`make notebook`) et source d'erreurs humaines.
