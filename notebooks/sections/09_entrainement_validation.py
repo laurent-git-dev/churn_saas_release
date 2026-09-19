@@ -43,6 +43,15 @@ X = ajouter_features_metier(X_brut)
 # Retirer la cible si elle a glissé (sécurité)
 X = X.drop(columns=[CIBLE], errors="ignore")
 
+_features_ajoutees = sorted(set(X.columns) - set(X_brut.columns))
+if _features_ajoutees:
+    display(Markdown(
+        f"**Features dérivées ajoutées par `ajouter_features_metier`** "
+        f"({len(_features_ajoutees)} variables) :  \n"
+        + ", ".join(f"`{c}`" for c in _features_ajoutees)
+        + "  \n→ Justification métier et formules en §7."
+    ))
+
 display(
     Markdown(
         f"**Dimensions** — {X.shape[0]:,} observations × {X.shape[1]} features. "
@@ -50,6 +59,14 @@ display(
         f"(classe déséquilibrée : {y.sum():,} churners / {(~y.astype(bool)).sum():,} fidèles)."
     )
 )
+
+# %% [markdown]
+# **Ce qu'il faut retenir — feature engineering.**
+# Le feature engineering (documenté en §7) encode du savoir métier que les variables
+# brutes ne capturent pas directement : ratios d'adoption, ancienneté relative,
+# intensité d'usage.  Ces variables dérivées sont construites **à l'intérieur du
+# pipeline scikit-learn**, appliquées après le split — elles ne voient jamais les
+# données de validation au moment du fit, garantissant l'absence de fuite (item C3/C5).
 
 # %% [markdown]
 # ### 9.2 Stratégie d'entraînement
@@ -440,7 +457,11 @@ elif "logistique" in _nom_low or "régression" in _nom_low:
 else:
     _famille = "Gradient boosting"
 _espace_desc = _ESPACES.get(_famille, _ESPACES["Gradient boosting"])
-_best_params = resultat_optuna["best_params"]
+# Optuna retourne parfois des clés préfixées ("etape__param") selon la structure
+# du Pipeline — on normalise en ne gardant que la partie après le dernier "__"
+_best_params = {
+    k.split("__")[-1]: v for k, v in resultat_optuna["best_params"].items()
+}
 
 _tableau_hp = pd.DataFrame(
     [
@@ -455,6 +476,17 @@ _tableau_hp = pd.DataFrame(
 ).set_index("Hyperparamètre")
 
 display(_tableau_hp)
+
+# %% [markdown]
+# **Ce qu'il faut retenir — hyperparamètres.**
+# L'espace de recherche est volontairement étroit (30 essais, 5-fold) : sur ~5 000
+# observations, le bruit d'estimation de la CV est du même ordre de grandeur que le
+# gain potentiel d'un espace plus large, et l'empreinte carbone d'un tuning étendu
+# n'est pas justifiée (cf. §9.9).  La colonne « Valeur retenue » ci-dessus donne la
+# valeur sélectionnée par l'algorithme TPE d'Optuna pour ce jeu de données.
+# La colonne « Effet observé » explicite le rôle de régularisation ou de capacité
+# de chaque hyperparamètre — information transmissible à l'équipe qui réentraînera
+# le modèle lors du prochain cycle de vie.
 
 # %%
 # Gain Optuna vs hyperparamètres par défaut
@@ -770,6 +802,20 @@ _criteres = pd.DataFrame(
 ).set_index("Critère")
 
 display(_criteres.style.set_properties(**{"text-align": "left"}))
+
+# %% [markdown]
+# **Déclencheurs de réentraînement conditionnel — synthèse.**
+# Le « cas échéant » (item C5) couvre trois situations distinctes :
+#
+# | Déclencheur | Signal | Seuil | Délai d'action |
+# |---|---|---|---|
+# | Dérive des données (input drift) | PSI > 0,20 sur ≥ 1 variable-clé (Evidently — §13) | Contrôle mensuel | Réentraîner dans les 2 semaines |
+# | Chute de performance | PR-AUC OOF < `config.CIBLES_PERFORMANCE["pr_auc_min"]` au prochain lot de labels | Détection continue | Réentraîner immédiatement |
+# | Calendaire (précaution) | Trimestre écoulé — fréquence fixée au cadrage §2 | Périodique | Réentraîner, même sans dérive détectée |
+#
+# Le playbook opérationnel (flow Prefect, procédure d'escalade, test de non-régression)
+# est formalisé en §13.  La périodicité de revue des indicateurs est décidée dès le
+# cadrage §2, conformément à l'item C9.
 
 # %% [markdown]
 # ### 9.13 Latence d'inférence — confrontation aux cibles §8

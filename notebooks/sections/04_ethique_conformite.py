@@ -602,6 +602,19 @@ risques_resume = [
 ]
 display(pd.DataFrame(risques_resume).set_index("ID"))
 
+# %%
+from pathlib import Path
+
+_risk_register = Path("docs/RISK_REGISTER.md")
+assert _risk_register.exists(), (
+    "docs/RISK_REGISTER.md introuvable — vérifier que le fichier est inclus dans le ZIP de livraison."
+)
+_taille = _risk_register.stat().st_size
+_lignes = len(_risk_register.read_text(encoding="utf-8").splitlines())
+print(f"✓ docs/RISK_REGISTER.md présent ({_taille} octets, {_lignes} lignes).")
+print("  Ce registre constitue la trace de communication des risques aux acteurs concernés (item C2).")
+print("  La note de synthèse datée au commanditaire est reproduite ci-dessous (§4.6.2).")
+
 # %% [markdown]
 # #### 4.6.2 Note de synthèse au commanditaire
 #

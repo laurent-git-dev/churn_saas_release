@@ -236,6 +236,21 @@ pd.set_option("display.max_colwidth", 120)
 display(df_entretiens[["Acteur", "Contraintes remontées"]])
 
 # %% [markdown]
+# #### Contraintes de généralisation identifiées lors des entretiens
+#
+# La **généralisation** désigne ici la capacité du système à fonctionner au-delà du périmètre
+# pilote initial (5 000 comptes, un seul produit SaaS, équipe ML de 2 personnes). Trois axes
+# ont été explorés avec les acteurs :
+#
+# | Axe de généralisation | Contrainte remontée | Acteur | Impact architectural |
+# |---|---|---|---|
+# | **Volume** — passage de 5 k à 50 k comptes | Infrastructure doit scaler sans refonte (ECS auto-scaling) | DSI | Scénario B prévu jusqu'à ~50 k comptes ; au-delà → réévaluation scénario C (Phase 3, §11.7) |
+# | **Portabilité** — changement de cloud provider | Pas de lock-in SDK propriétaire ; images Docker standard | RSSI | Conteneurs sans dépendance SageMaker/Vertex ; Parquet + PostgreSQL standards |
+# | **Réplicabilité** — extension à d'autres produits / marchés | Séparation config/code ; un seul `config.py` par produit suffit | Responsable CS | Architecture paramétrée via `churn_saas/config.py` ; pipeline réutilisable par simple fork |
+# | **Robustesse temporelle** — évolution du comportement des données | Drift détecté avant dégradation modèle | DPO + Équipe ML | PSI > 0,2 → réentraînement automatique (§13) ; SLO AUC ≥ 0,78 (§11.8) |
+# | **Contrainte de compétences** — équipe sans spécialiste MLOps | Services entièrement managés, runbook simple | DSI + Ops | Scénario B exclu Kubernetes ; runbook documenté en §11.9 |
+
+# %% [markdown]
 # **Ce qu'il faut retenir.** Les quatre acteurs interrogés font converger les contraintes vers le
 # même scénario : conteneurs managés, région UE, services entièrement managés (pas de Kubernetes
 # manuel), intégration Salesforce native. Le DPO impose une durée de conservation courte (90 j)
@@ -422,6 +437,24 @@ display(df_scenarios)
 # À 20 k comptes avec multi-AZ et monitoring renforcé, prévoir 300–450 €/mois.
 # Ces chiffres sont des estimations basées sur les tarifs publics AWS en vigueur en 2025 ;
 # des remises réservées (1 an) peuvent réduire la facture Fargate de 30–40 %.*
+
+# %% [markdown]
+# > 📧 **Note d'arbitrage économique — transmise au commanditaire (DSI, direction générale)**
+# >
+# > *Date simulée : J-30 avant la mise en production pilote.*
+# >
+# > Le tableau ci-dessus (scénario B, pilote 5 000 comptes) a été présenté aux acteurs concernés
+# > lors du comité de cadrage architecture. Points retenus dans le compte-rendu :
+# >
+# > - **DSI** : budget pilote ≤ 600 €/mois confirmé → scénario B validé (115–135 €/mois) ;
+# >   scénario C (800–2 500 €) explicitement écarté pour la phase pilote.
+# > - **Direction générale** : l'estimation de ROI (§12) rend le scénario B autofinancé dès
+# >   le 3e mois si le taux de rétention progresse de 5 points.
+# > - **RSSI** : surcoût de 15–20 €/mois accepté pour activer le chiffrement au repos (AES-256)
+# >   et la journalisation 12 mois — non inclus dans l'estimation initiale.
+# >
+# > *Cette note est simulée à des fins pédagogiques. Elle représente la démarche attendue en
+# > contexte réel : chiffrer, arbitrer, tracer la décision avec les parties prenantes.*
 
 # %% [markdown]
 # ### 11.8 SLO / SLI et procédures de remédiation

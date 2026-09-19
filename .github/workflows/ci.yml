@@ -41,6 +41,9 @@ jobs:
       - name: Tests
         run: uv run pytest -q
 
+      - name: Gate qualité modèle (slow)
+        run: uv run pytest -m slow -q
+
   cd:
     name: Publication image Docker
     runs-on: ubuntu-latest

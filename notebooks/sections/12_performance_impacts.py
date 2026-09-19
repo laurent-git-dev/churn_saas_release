@@ -869,6 +869,63 @@ display(
 # des interventions inutiles détruit la confiance de l'équipe et son adoption.
 
 # %% [markdown]
+# #### Tableau de bord SLO/SLI — confrontation cibles §8 / mesures §12
+
+# %%
+_roc_auc_min = config.CIBLES_PERFORMANCE.get("roc_auc_min", 0.75)
+df_slo = pd.DataFrame([
+    {
+        "Indicateur (SLI)": "PR-AUC (métrique principale)",
+        "SLO nominal": f"≥ {config.CIBLES_PERFORMANCE['pr_auc_min']:.2f}",
+        "Seuil d'alerte": f"< {config.CIBLES_PERFORMANCE['pr_auc_min']:.2f}",
+        "Seuil critique (suspension)": f"< {config.CIBLES_PERFORMANCE['pr_auc_min'] - 0.05:.2f}",
+        "Valeur mesurée": f"{pr_auc:.4f}",
+        "Statut": "✅" if pr_auc >= config.CIBLES_PERFORMANCE["pr_auc_min"] else "❌",
+    },
+    {
+        "Indicateur (SLI)": "AUC-ROC",
+        "SLO nominal": f"≥ {_roc_auc_min:.2f}",
+        "Seuil d'alerte": f"< {_roc_auc_min:.2f}",
+        "Seuil critique (suspension)": f"< {_roc_auc_min - 0.05:.2f}",
+        "Valeur mesurée": f"{auc_roc:.4f}",
+        "Statut": "✅" if auc_roc >= _roc_auc_min else "❌",
+    },
+    {
+        "Indicateur (SLI)": "Latence unitaire (médiane)",
+        "SLO nominal": f"≤ {_cible_unit} ms",
+        "Seuil d'alerte": f"> {_cible_unit} ms",
+        "Seuil critique (suspension)": f"> {_cible_unit * 3} ms",
+        "Valeur mesurée": f"{_lat_unit:.1f} ms",
+        "Statut": "✅" if _lat_unit <= _cible_unit else "❌",
+    },
+    {
+        "Indicateur (SLI)": f"Latence batch {rapport_latence['n_batch']:,} comptes",
+        "SLO nominal": f"≤ {_cible_batch} s",
+        "Seuil d'alerte": f"> {_cible_batch} s",
+        "Seuil critique (suspension)": f"> {_cible_batch * 2} s",
+        "Valeur mesurée": f"{_lat_batch:.1f} s",
+        "Statut": "✅" if _lat_batch <= _cible_batch else "❌",
+    },
+    {
+        "Indicateur (SLI)": "ROI mensuel",
+        "SLO nominal": "≥ 1,5×",
+        "Seuil d'alerte": "< 1,5×",
+        "Seuil critique (suspension)": "< 1,0×",
+        "Valeur mesurée": f"{_roi:.2f}×",
+        "Statut": "✅" if _roi >= 1.5 else "❌",
+    },
+]).set_index("Indicateur (SLI)")
+display(df_slo)
+
+display(Markdown(
+    "**Ce qu'il faut retenir.** Ce tableau consolide les SLO (*Service Level Objectives*) "
+    "définis *a priori* en §8 et les valeurs effectivement mesurées en §12. "
+    "Un indicateur en seuil d'alerte déclenche une investigation humaine ; "
+    "en seuil critique, une suspension préventive du scoring en production "
+    "(table des actions système — §12.15)."
+))
+
+# %% [markdown]
 # ### 12.13 Empreinte carbone (ESTIMATION)
 #
 # ⚠️ Sous WSL2, CodeCarbon n'a pas accès aux compteurs RAPL. Il **estime** la consommation
@@ -975,6 +1032,10 @@ display(
 
 ## 📋 Note de restitution au commanditaire
 
+**Date :** {pd.Timestamp.now().strftime('%d/%m/%Y')}
+**Destinataires :** CS Lead · Direction commerciale · DSI
+**Objet :** Résultats du système de détection de churn — décision de déploiement demandée
+
 ### Ce qui marche
 
 - Le système détecte **{_n_churners_detectes} churners réels** parmi les {_cap} comptes les plus
@@ -1031,6 +1092,53 @@ point de vigilance n°1).
 """
     )
 )
+
+# %% [markdown]
+# #### Table des actions système — pilotage du modèle en production
+
+# %%
+df_actions_systeme = pd.DataFrame([
+    {
+        "Indicateur surveillé": "PR-AUC (monitoring mensuel Evidently §13)",
+        "Seuil d'alerte": f"< {config.CIBLES_PERFORMANCE['pr_auc_min']:.2f}",
+        "Seuil critique": f"< {config.CIBLES_PERFORMANCE['pr_auc_min'] - 0.05:.2f}",
+        "Action déclenchée": "Alerter DS Lead — investigation",
+        "Action critique": "Suspendre le scoring · Réentraîner",
+        "Responsable": "Data Scientist",
+    },
+    {
+        "Indicateur surveillé": "Dérive données (PSI §13)",
+        "Seuil d'alerte": "PSI > 0,10",
+        "Seuil critique": "PSI > 0,20",
+        "Action déclenchée": "Inspecter la source de données",
+        "Action critique": "Réentraîner sur cohorte récente",
+        "Responsable": "Data Engineer",
+    },
+    {
+        "Indicateur surveillé": "ROI mensuel (§12.12)",
+        "Seuil d'alerte": "ROI < 1,5×",
+        "Seuil critique": "ROI < 1,0×",
+        "Action déclenchée": "Réviser les hypothèses économiques",
+        "Action critique": "Revoir stratégie CS + seuils modèle",
+        "Responsable": "CS Lead + DS Lead",
+    },
+    {
+        "Indicateur surveillé": f"Fatigue d'alerte (Précision@{_cap})",
+        "Seuil d'alerte": "< 30 %",
+        "Seuil critique": "< 20 %",
+        "Action déclenchée": "Réévaluer le seuil τ*",
+        "Action critique": "Réévaluer le modèle complet",
+        "Responsable": "CS Lead + Data Scientist",
+    },
+]).set_index("Indicateur surveillé")
+display(df_actions_systeme.style.set_properties(**{"text-align": "left"}))
+
+display(Markdown(
+    "**Ce qu'il faut retenir.** Cette table définit les engagements de pilotage (*SLA système*) "
+    "du modèle en production. Les seuils d'alerte déclenchent une investigation humaine ; "
+    "les seuils critiques déclenchent une action automatisée (gate CI/CD §13). "
+    "Le monitoring Evidently (§13) produit ces indicateurs à chaque run hebdomadaire."
+))
 
 # %% [markdown]
 # ### 12.16 Journal de bord

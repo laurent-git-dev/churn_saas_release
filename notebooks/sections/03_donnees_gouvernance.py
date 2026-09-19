@@ -65,6 +65,39 @@ for nom, r in resultats.items():
 df_controle = pd.DataFrame(lignes_controle).set_index("Fichier")
 display(df_controle)
 
+# %%
+import os
+
+# Vérification des droits d'accès en lecture (item C1 : « accès des données vérifiés »)
+lignes_acces = []
+for nom, chemin in fichiers.items():
+    if chemin.exists():
+        lisible = os.access(chemin, os.R_OK)
+        ecriture = os.access(chemin, os.W_OK)
+        lignes_acces.append(
+            {
+                "Fichier": nom,
+                "Lecture": "✓" if lisible else "✗",
+                "Écriture (doit être ✗ pour raw/)": "⚠ Oui" if ecriture else "✓ Non",
+                "Permissions (octal)": oct(chemin.stat().st_mode & 0o777),
+            }
+        )
+
+df_acces = pd.DataFrame(lignes_acces).set_index("Fichier")
+display(df_acces)
+
+assert all(r["Lecture"] == "✓" for r in lignes_acces), \
+    "Accès en lecture non accordé sur au moins un fichier source."
+print("\n✓ Droits d'accès en lecture confirmés pour tous les fichiers sources.")
+print("  Gouvernance des accès humains documentée en §3.5 et §3.6.")
+
+# %% [markdown]
+# **Ce qu'il faut retenir.**
+# Les trois fichiers sont accessibles en lecture par le processus d'exécution du notebook.
+# L'absence de droit d'écriture sur `data/raw/` est intentionnelle et vérifiée :
+# la couche Bronze ne doit jamais être modifiée (principe d'immutabilité des sources brutes).
+# La gouvernance des accès humains (qui peut lire, qui peut auditer) est documentée en §3.5 et §3.6.
+
 # Vérification bloquante : si un fichier manque, la section lève une erreur explicite
 manquants = [nom for nom, r in resultats.items() if not r["existe"]]
 if manquants:

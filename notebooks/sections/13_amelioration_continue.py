@@ -155,14 +155,22 @@ chemin_gate = config.RACINE / "tests" / "test_model_quality_gate.py"
 contenu_gate = chemin_gate.read_text(encoding="utf-8")
 display(Markdown(f"**Fichier `{chemin_gate.relative_to(config.RACINE)}` :**\n\n```python\n{contenu_gate}\n```"))
 
+# %%
+# Affichage du workflow CI/CD (preuve que le gate est effectivement déclenché sur push/PR)
+chemin_ci = config.RACINE / ".github" / "workflows" / "ci.yml"
+display(Markdown(
+    f"**`.github/workflows/ci.yml`** — pipeline CI/CD complet :\n\n"
+    f"```yaml\n{chemin_ci.read_text(encoding='utf-8')}\n```"
+))
+
 # %% [markdown]
-# **Ce qu'il faut retenir.** Le test de gate est **bloquant dans la CI** (voir
-# `.github/workflows/` ou équivalent) : si le pipeline de préparation des données
-# ou le feature engineering est dégradé, `pytest -m slow` échoue et le merge est
-# bloqué. Ce mécanisme implémente le principe MLOps de *quality gate as code*.
-# La gate de promotion dans le flow (`stage_gate`) est la deuxième ligne de défense :
-# elle opère sur le vrai modèle entraîné avec les hyperparamètres Optuna, pas sur
-# un proxy synthétique.
+# **Ce qu'il faut retenir.** Le test de gate est **bloquant dans la CI** : le step
+# `Gate qualité modèle (slow)` exécute `pytest -m slow -q` sur tout push vers `main`
+# et toute pull request. Si le pipeline de préparation des données ou le feature
+# engineering est dégradé, ce step échoue et le merge est bloqué. Ce mécanisme
+# implémente le principe MLOps de *quality gate as code*. La gate de promotion dans
+# le flow (`stage_gate`) est la deuxième ligne de défense : elle opère sur le vrai
+# modèle entraîné avec les hyperparamètres Optuna, pas sur un proxy synthétique.
 
 # %% [markdown]
 # ---
@@ -503,10 +511,32 @@ display(Markdown(
 # lisser les pics transitoires — un seul appel lent ne déclenche pas d'alerte.
 # Le délai `for: 5m` ajoute une deuxième couche de filtrage.
 #
-# **Métriques de prédiction manquantes.** Ajouter un compteur `churn_predictions_total`
-# avec label `decision` dans l'API (`/predict`) permettrait de suivre la distribution
-# des décisions en temps réel et de détecter une dérive de sortie (ex. : soudaine
-# explosion du taux `ALERTE_ROUGE`) même sans drift détecté sur les entrées.
+# %%
+# Affichage du compteur de taux de prévision instrumenté dans l'API (preuve C9)
+chemin_api = config.RACINE / "src" / "churn_saas" / "api" / "main.py"
+contenu_api = chemin_api.read_text(encoding="utf-8")
+lignes_compteur = [
+    l for l in contenu_api.split("\n")
+    if any(kw in l for kw in [
+        "churn_predictions_total", "Counter(", "_PREDICTIONS_COUNTER", "prometheus_client",
+    ])
+]
+display(Markdown(
+    "**Compteur Prometheus `churn_predictions_total` dans `api/main.py`** :\n\n"
+    f"```python\n{chr(10).join(lignes_compteur)}\n```\n\n"
+    "Le label `decision` (ALERTE_ROUGE / SURVEILLANCE / OK) permet de suivre "
+    "le **taux de prévision par classe** en temps réel et de détecter une dérive "
+    "de sortie — par exemple une explosion soudaine du taux `ALERTE_ROUGE` — "
+    "même sans dérive détectée sur les entrées."
+))
+
+# %% [markdown]
+# **Ce qu'il faut retenir.** Le compteur `churn_predictions_total` complète le
+# dispositif de monitoring : il est exposé sur `/metrics` (scraped par Prometheus)
+# et visible dans le dashboard Grafana. Combiné au PSI/KS sur les entrées (§13.3)
+# et à l'indicateur d'obsolescence (§13.6), il forme un monitoring à trois niveaux :
+# dérive d'entrée (immédiate), dérive de sortie (immédiate), dégradation de performance
+# (décalée, après obtention des étiquettes — §13.7).
 
 # %% [markdown]
 # ---

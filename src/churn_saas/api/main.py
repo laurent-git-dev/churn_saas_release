@@ -8,6 +8,7 @@ from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, status
+from prometheus_client import Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from churn_saas import config
@@ -53,6 +54,12 @@ app = FastAPI(
 app.add_middleware(LimiteCorpsMiddleware)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+
+_PREDICTIONS_COUNTER = Counter(
+    "churn_predictions_total",
+    "Nombre de prédictions par décision (ALERTE_ROUGE / SURVEILLANCE / OK)",
+    ["decision"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +185,9 @@ async def predict(
         )
     X = _demande_vers_dataframe([demande])
     probas = store.predire(X)
-    return _construire_resultat(demande, float(probas[0, 1]), store.seuil)
+    resultat = _construire_resultat(demande, float(probas[0, 1]), store.seuil)
+    _PREDICTIONS_COUNTER.labels(decision=resultat.decision).inc()
+    return resultat
 
 
 @app.post(
@@ -220,6 +229,8 @@ async def predict_batch(
         for d, p in zip(demandes, probas, strict=False)
     ]
     decisions = [r.decision for r in predictions]
+    for dec in decisions:
+        _PREDICTIONS_COUNTER.labels(decision=dec).inc()
     return ResultatBatch(
         nb_comptes=len(predictions),
         predictions=predictions,

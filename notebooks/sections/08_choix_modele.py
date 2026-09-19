@@ -64,6 +64,50 @@ display(
 )
 
 # %% [markdown]
+# #### 8.1.1 Cohérence pour la cible secondaire : régression
+#
+# La cible secondaire `valeur_vie_client_eur` est une valeur continue — elle relève de la régression,
+# pas de la classification. Le choix du modèle doit être cohérent pour les deux tâches.
+
+# %%
+_type_regression = pd.DataFrame(
+    {
+        "Dimension": [
+            "Nature",
+            "Apprentissage",
+            "Cible",
+            "Type de sortie attendue",
+            "Métriques d'évaluation",
+            "Modèle retenu",
+        ],
+        "Valeur retenue": [
+            "Régression (prédiction d'une valeur continue)",
+            "Supervisé (valeurs historiques disponibles)",
+            "`valeur_vie_client_eur` (en euros, continue, strictement positive)",
+            "**Déterministe** — une estimation de valeur, pas une probabilité",
+            "RMSE (pénalise les grandes erreurs), MAE (robuste aux outliers), R² (proportion de variance expliquée)",
+            "GBM Regressor (même famille que le modèle de classification — pipeline homogène) ; "
+            "Régression Linéaire Ridge en baseline",
+        ],
+    }
+).set_index("Dimension")
+
+display(_type_regression)
+
+# %%
+display(
+    Markdown(
+        "**Ce qu'il faut retenir.** Les deux tâches utilisent la **même famille d'algorithmes** "
+        "(GBM) avec des objectifs d'optimisation différents (`binary:logistic` pour la classification, "
+        "`reg:squarederror` pour la régression). "
+        "Ce choix homogène simplifie le pipeline de déploiement (§10) et la maintenance. "
+        "La sortie de la régression est **déterministe** — contrairement au score de risque, "
+        "le CSM reçoit une valeur en euros, pas une probabilité, ce qui ne nécessite pas de calibration. "
+        "Les métriques RMSE / MAE / R² sont calculées en §9 et §12."
+    )
+)
+
+# %% [markdown]
 # ### 8.2 Cibles de performance a priori — item C4 : « performance attendue »
 #
 # **Principe scientifique** : les seuils d'acceptabilité sont fixés *avant* de voir les résultats.
@@ -83,14 +127,15 @@ _cibles = pd.DataFrame(
             f"≥ {config.CIBLES_PERFORMANCE['pr_auc_min']:.2f}",
             f"≤ {config.CIBLES_PERFORMANCE['latence_unitaire_ms']} ms",
             f"≤ {config.CIBLES_PERFORMANCE['latence_batch_5k_s']} s",
-            "Arbitrage perf/carbone documenté et transmis au commanditaire",
+            "≤ 50 g CO₂e / session d'entraînement complète (mesuré par CodeCarbon §9)",
         ],
         "Justification": [
             f"Modèle aléatoire ≈ {0.17:.2f} (prévalence) ; seuil de {config.CIBLES_PERFORMANCE['pr_auc_min']:.2f} représente "
             "le gain minimal justifiant le coût de déploiement",
             "Webhook CRM déclenché à la date de renouvellement — contrainte d'UX temps réel",
             "Fenêtre de maintenance nocturne < 5 min — contrainte d'exploitation",
-            "Équipe de 3 CSM × ~15 gestes/mois ; modèle doit consommer moins que le gain en productivité",
+            "50 g CO₂e ≈ 0,2 km en voiture — consommation négligeable vs gain de productivité CSM "
+            "(~4 h/mois/personne). Seuil fixé a priori ; mesuré par CodeCarbon en §9 et reporté dans l'éco-bilan §12.",
         ],
     }
 ).set_index("Métrique / contrainte")
@@ -202,6 +247,22 @@ display(
         "sur un modèle plus complexe à gain marginal."
     )
 )
+
+# %%
+_note_eco = (
+    "**Note d'arbitrage éco-conception — transmise au commanditaire**\n\n"
+    "| | |\n|---|---|\n"
+    "| **Destinataire** | Direction Produit + DSI |\n"
+    "| **Objet** | Arbitrage performance / temps de calcul / empreinte carbone |\n"
+    f"| **Engagement** | Aucun modèle plus complexe ne sera retenu pour un gain PR-AUC < 0,02 "
+    f"sur la baseline ML (seuil : PR-AUC ≥ {config.CIBLES_PERFORMANCE['pr_auc_min']:.2f}). |\n"
+    "| **Budget Optuna** | 30 trials maximum ≈ 5 min GPU / 15 min CPU — "
+    "empreinte mesurée par CodeCarbon en §9 et reportée en §12. |\n"
+    "| **Réentraînement** | Mensuel par défaut ; conditionnel si drift détecté (§13) — "
+    "évite les entraînements inutiles. |\n"
+    "| **Statut** | *(Simulée dans le cadre de l'examen — assumée comme telle)* |"
+)
+display(Markdown(_note_eco))
 
 # %% [markdown]
 # ### 8.5 Analyse build vs buy — item C4 : « pertinence des solutions sur l'étagère »
@@ -452,6 +513,52 @@ display(
         f"pas *a posteriori* après avoir vu les scores. "
         f"Le test de Wilcoxon garantit que la supériorité du champion sur B2 (Régression Logistique) "
         f"n'est pas due à la variance de pli — critère objectif, non cherry-pické."
+    )
+)
+
+# %% [markdown]
+# #### 8.8.1 Pourquoi PR-AUC et non ROC-AUC comme métrique de rang ?
+#
+# Les deux métriques sont liées, mais se comportent différemment avec des classes déséquilibrées.
+# Ce choix est explicité ici pour éviter tout malentendu à la lecture de §9 et §12.
+
+# %%
+_roc_vs_pr = pd.DataFrame(
+    {
+        "Critère": [
+            "Sensibilité au déséquilibre",
+            "Plancher théorique",
+            "Ce qu'elle maximise",
+            "Adéquation métier",
+        ],
+        "ROC-AUC": [
+            "Faible — le FPR est dilué par les vrais négatifs (majoritaires à 83 %)",
+            "0,50 — un modèle naïf prédisant tout '0' y atteint 0,50",
+            "Aire TPR = f(FPR) — pénalise peu les FP quand les TN sont nombreux",
+            "Médiocre — le coût métier porte sur la classe minoritaire (churners), pas sur les TN",
+        ],
+        "PR-AUC": [
+            "Forte — Précision et Rappel se concentrent exclusivement sur la classe positive",
+            "≈ prévalence (0,17) — plancher honnête et directement interprétable",
+            "Aire Précision = f(Rappel) — chaque FP et chaque FN est visible",
+            "Excellente — prioriser les vrais churners (Rappel) sans noyer les CSM de faux positifs (Précision)",
+        ],
+    }
+).set_index("Critère")
+
+display(_roc_vs_pr)
+
+# %%
+display(
+    Markdown(
+        "**Ce qu'il faut retenir.** Avec une prévalence de ~17 %, la ROC-AUC peut être flatteuse "
+        "sans que le modèle soit utile : un classificateur qui prédit 'restera' pour tous les comptes "
+        "obtient ROC-AUC = 0,50 mais rate 100 % des churners. "
+        "La PR-AUC est immunisée contre ce biais : son plancher théorique est la prévalence elle-même "
+        f"(~0,17), ce qui rend le seuil d'acceptabilité de {config.CIBLES_PERFORMANCE['pr_auc_min']:.2f} "
+        "directement interprétable comme un gain réel sur la classe minoritaire. "
+        "La ROC-AUC reste calculée en §12 comme métrique de communication "
+        "(plus intuitive pour un public non-data) et pour comparer avec la littérature."
     )
 )
 

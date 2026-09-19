@@ -27,6 +27,7 @@ from churn_saas.data.quality import (
     coercer_numeriques,
     detecter_valeurs_impossibles,
     parser_dates,
+    proposer_renommage,
 )
 from churn_saas.features.build import ajouter_features_metier, joindre_catalogue
 from churn_saas.features.enrichissement import (
@@ -149,6 +150,39 @@ _MARQUEURS_NA = ["", "n/a", "na", "nan", "null", "none", "#n/a", "-", "nd", "nr"
 df_prep = df_brut.copy().replace({m: np.nan for m in _MARQUEURS_NA})
 
 # %% [markdown]
+# #### 7.3.0 Application du renommage — convention snake_case (item C3)
+#
+# `proposer_renommage()` a identifié en §5.9 les colonnes ne respectant pas
+# la convention (snake_case, sans accent, unités suffixées).
+# On applique le renommage ici, avant toute transformation, pour garantir
+# la cohérence des noms dans l'ensemble du pipeline aval.
+
+# %%
+_df_renommage = proposer_renommage(df_prep)
+_renames = {
+    k: v
+    for k, v in zip(_df_renommage.index, _df_renommage["nom_propose"])
+    if k != v
+}
+
+if _renames:
+    df_prep = df_prep.rename(columns=_renames)
+    display(
+        Markdown(
+            f"**{len(_renames)} colonne(s) renommée(s) :**\n\n"
+            + "\n".join(f"- `{k}` → `{v}`" for k, v in _renames.items())
+        )
+    )
+else:
+    display(
+        Markdown(
+            "**Aucun renommage nécessaire.** Les noms d'origine respectent déjà "
+            "la convention snake_case sans accent avec suffixes d'unités — "
+            "cohérent avec le dictionnaire structuré fourni par l'éditeur."
+        )
+    )
+
+# %% [markdown]
 # #### 7.3.1 Déduplication
 
 # %%
@@ -255,6 +289,54 @@ print(f"Shape après nettoyage complet : {df_prep.shape}")
 # **Ce qu'il faut retenir.** Les corrections (clip) utilisent des bornes métier connues a priori
 # (taux ∈ [0, 100], utilisateurs ≤ sièges) — ce ne sont pas des statistiques apprises,
 # donc elles peuvent précéder le split sans fuite.
+
+# %% [markdown]
+# #### 7.3.5 Normalisation de casse et d'espaces (colonnes catégorielles)
+#
+# Des incohérences de casse (« Finance », « finance », « FINANCE ») ou d'espaces parasites
+# créeraient des modalités distinctes dans OneHotEncoder et fausseraient les agrégats
+# sectoriels. La normalisation est faite avant le split : elle n'utilise aucune statistique
+# apprise et ne constitue donc pas une fuite.
+
+# %%
+_COLS_CAT = [
+    "secteur", "pays", "taille_entreprise", "plan",
+    "couleur_theme_interface", "code_datacenter",
+    "groupe_experimentation", "jour_souscription",
+]
+_cols_cat_ok = [c for c in _COLS_CAT if c in df_prep.columns]
+
+_rapport_casse = []
+for _col in _cols_cat_ok:
+    _avant = df_prep[_col].dropna().nunique()
+    df_prep[_col] = (
+        df_prep[_col]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .replace("nan", np.nan)
+    )
+    _apres = df_prep[_col].dropna().nunique()
+    _rapport_casse.append(
+        {
+            "Colonne": _col,
+            "Modalités avant": _avant,
+            "Modalités après": _apres,
+            "Réduites": _avant - _apres,
+        }
+    )
+
+df_casse = pd.DataFrame(_rapport_casse).set_index("Colonne")
+display(df_casse)
+
+display(
+    Markdown(
+        "**Ce qu'il faut retenir.** La normalisation (`.strip().lower()`) supprime les "
+        "incohérences de casse et les espaces parasites. Toute réduction du nombre de "
+        "modalités correspond à des doublons typographiques fusionnés — "
+        "aucune information métier n'est perdue."
+    )
+)
 
 # %% [markdown]
 # ### 7.4 Traitement des valeurs manquantes
