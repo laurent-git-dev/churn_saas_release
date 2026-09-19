@@ -88,25 +88,19 @@ _cout_mensuel_cs = (
 )
 _roi = _mrr_sauve / _cout_mensuel_cs if _cout_mensuel_cs > 0 else 0.0
 
-# %% [markdown]
-# ### Problème métier
-#
-# Un éditeur SaaS B2B gère un portefeuille de **{n_comptes:,} comptes** actifs
-# (PME et grandes entreprises européennes, abonnements annuels). L'équipe Customer Success
-# (3 CSM) ne peut pas surveiller manuellement l'ensemble du portefeuille :
-# les signaux de résiliation arrivent trop tard, après que le client a déjà décidé de partir.
-# L'objectif est de produire, chaque semaine, un **score de risque de churn à 30 jours**
-# pour chaque compte, afin de prioriser les interventions CS avant l'échéance contractuelle.
-#
-# La prévalence de churn dans le dataset est de **{prevalence:.1%}** (classe déséquilibrée) :
-# c'est pourquoi la **PR-AUC** est la métrique principale — elle penalise à la fois les faux
-# positifs et les faux négatifs, contrairement à la ROC-AUC insensible au déséquilibre.
-
 # %%
 display(
     Markdown(
-        f"**Portefeuille** — {len(y):,} comptes · prévalence churn : **{y.mean():.1%}** "
-        f"({y.sum():,} résiliations)."
+        f"### Problème métier\n\n"
+        f"Un éditeur SaaS B2B gère un portefeuille de **{len(y):,} comptes** actifs "
+        "(PME et grandes entreprises européennes, abonnements annuels). L'équipe Customer Success "
+        "(3 CSM) ne peut pas surveiller manuellement l'ensemble du portefeuille : "
+        "les signaux de résiliation arrivent trop tard, après que le client a déjà décidé de partir. "
+        "L'objectif est de produire, chaque semaine, un **score de risque de churn à 30 jours** "
+        "pour chaque compte, afin de prioriser les interventions CS avant l'échéance contractuelle.\n\n"
+        f"La prévalence de churn dans le dataset est de **{y.mean():.1%}** (classe déséquilibrée) : "
+        "c'est pourquoi la **PR-AUC** est la métrique principale — elle pénalise à la fois les faux "
+        "positifs et les faux négatifs, contrairement à la ROC-AUC insensible au déséquilibre."
     )
 )
 
@@ -165,16 +159,6 @@ display(
 """
     )
 )
-
-# %% [markdown]
-# **Ce qu'il faut retenir.**
-# Le modèle `{nom}` atteint une PR-AUC de **{pr_auc:.4f}** en évaluation out-of-fold,
-# au-dessus du seuil de déploiement fixé a priori à {seuil_cible:.2f}.
-# En régime opérationnel (top-{cap} comptes/mois), il identifie **{n_churners} churners réels**
-# sur {cap} interventions, soit une précision de **{prec:.1%}** — nettement au-dessus
-# du seuil de viabilité opérationnelle (> 30 %).
-# Le gain net espéré est de **{gain:,.0f} €/an** pour un coût mensuel CS de {cout:,.0f} €
-# (ROI = {roi:.1f}×), sous les hypothèses économiques documentées en §12.4.
 
 # %%
 display(

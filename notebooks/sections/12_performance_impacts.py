@@ -123,12 +123,16 @@ display(
 fig_roc, auc_roc = eval_mod.courbe_roc(y, proba_oof, nom_modele=type(modele_final[-1]).__name__)
 plt.show()
 
-# %% [markdown]
-# **Ce qu'il faut retenir.** AUC-ROC = {:.3f} (à remplacer par la valeur calculée).
-# La courbe ROC mesure la discrimination globale sur **tous les seuils** : un AUC > 0,80
-# indique que le modèle distingue churners et fidèles nettement mieux que l'aléatoire
-# (diagonale, AUC = 0,50). Limite : elle ne pénalise pas les faux positifs — c'est
-# la courbe PR-AUC qui prime sur notre jeu déséquilibré.
+# %%
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** AUC-ROC = **{auc_roc:.3f}**. "
+        "La courbe ROC mesure la discrimination globale sur **tous les seuils** : un AUC > 0,80 "
+        "indique que le modèle distingue churners et fidèles nettement mieux que l'aléatoire "
+        "(diagonale, AUC = 0,50). Limite : elle ne pénalise pas les faux positifs — c'est "
+        "la courbe PR-AUC qui prime sur notre jeu déséquilibré."
+    )
+)
 
 # %% [markdown]
 # #### 12.2.2 Courbe Précision-Rappel et PR-AUC (métrique principale)
@@ -148,11 +152,15 @@ display(
     )
 )
 
-# %% [markdown]
-# **Ce qu'il faut retenir.** La courbe PR-AUC est la métrique de référence pour les classes
-# déséquilibrées (ici ~{:.0%} de churners). Elle pénalise à la fois les faux positifs
-# (précision) et les faux négatifs (rappel). La ligne de référence horizontale est tracée
-# à la prévalence du churn : tout point au-dessus représente un gain réel sur le hasard.
+# %%
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** La courbe PR-AUC est la métrique de référence pour les classes "
+        f"déséquilibrées (ici ~{y.mean():.0%} de churners). Elle pénalise à la fois les faux positifs "
+        "(précision) et les faux négatifs (rappel). La ligne de référence horizontale est tracée "
+        "à la prévalence du churn : tout point au-dessus représente un gain réel sur le hasard."
+    )
+)
 
 # %% [markdown]
 # #### 12.2.3 Calibration probabiliste (score de Brier)
@@ -167,12 +175,16 @@ fig_cal, brier = eval_mod.courbe_calibration(
 )
 plt.show()
 
-# %% [markdown]
-# **Ce qu'il faut retenir.** Score de Brier = {:.4f} (0 = parfait, 0,25 = aléatoire).
-# Plus la courbe de fiabilité colle à la diagonale parfaite, plus les probabilités
-# sont directement interprétables en euros dans le calcul de la valeur à risque.
-# Le modèle utilise `class_weight='balanced'` (non-rééchantillonné) pour préserver
-# la calibration (point de vigilance n°4).
+# %%
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** Score de Brier = **{brier:.4f}** (0 = parfait, 0,25 = aléatoire). "
+        "Plus la courbe de fiabilité colle à la diagonale parfaite, plus les probabilités "
+        "sont directement interprétables en euros dans le calcul de la valeur à risque. "
+        "Le modèle utilise `class_weight='balanced'` (non-rééchantillonné) pour préserver "
+        "la calibration (point de vigilance n°4)."
+    )
+)
 
 # %% [markdown]
 # #### 12.2.4 Tableau récapitulatif des métriques
@@ -216,12 +228,16 @@ _df_latence = pd.DataFrame(
 ).set_index("Indicateur")
 display(_df_latence)
 
-# %% [markdown]
-# **Ce qu'il faut retenir.** Les deux contraintes opérationnelles fixées *a priori* en §8
-# sont testées ici : (1) latence unitaire ≤ {_cible_unit} ms pour le webhook CRM
-# déclenché à la date de renouvellement, (2) batch 5 000 comptes ≤ {_cible_batch} s
-# pour la fenêtre de maintenance nocturne. Le modèle arbre (RandomForest / HGBT)
-# est naturellement rapide à l'inférence.
+# %%
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** Les deux contraintes opérationnelles fixées *a priori* en §8 "
+        f"sont testées ici : (1) latence unitaire ≤ {_cible_unit} ms pour le webhook CRM "
+        f"déclenché à la date de renouvellement, (2) batch 5 000 comptes ≤ {_cible_batch} s "
+        "pour la fenêtre de maintenance nocturne. Le modèle arbre (RandomForest / HGBT) "
+        "est naturellement rapide à l'inférence."
+    )
+)
 
 # %% [markdown]
 # ### 12.4 Matrice de coûts et hypothèses économiques
@@ -309,12 +325,16 @@ plt.show()
 df_metriques_opt = eval_mod.tableau_metriques(y, proba_oof, seuil_opt)
 display(df_metriques_opt.style.format({"valeur": "{:.4f}"}).hide(axis="index"))
 
-# %% [markdown]
-# **Ce qu'il faut retenir.** La matrice de confusion au seuil économique τ* = {seuil_opt:.2f}
-# montre les 4 types de prédictions. Les Faux Négatifs (FN) représentent les churners
-# non détectés — leur coût dépend du MRR du compte. Les Faux Positifs (FP) représentent
-# les interventions inutiles — leur coût est le temps CSM gaspillé. Le seuil τ* équilibre
-# ces deux types d'erreurs selon la matrice de coûts §12.4.
+# %%
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** La matrice de confusion au seuil économique τ\\* = **{seuil_opt:.2f}** "
+        "montre les 4 types de prédictions. Les Faux Négatifs (FN) représentent les churners "
+        "non détectés — leur coût dépend du MRR du compte. Les Faux Positifs (FP) représentent "
+        "les interventions inutiles — leur coût est le temps CSM gaspillé. Le seuil τ\\* équilibre "
+        "ces deux types d'erreurs selon la matrice de coûts §12.4."
+    )
+)
 
 # %% [markdown]
 # ### 12.6 Classement top-N sous contrainte de capacité
@@ -359,12 +379,16 @@ seuil d'escalade prioritaire (zone rouge).
     )
 )
 
-# %% [markdown]
-# **Ce qu'il faut retenir.** Le lift = {_lift_cap:.2f}× signifie que le modèle capture
-# {_lift_cap:.1f} fois plus de churners parmi les {_cap} premiers comptes que si l'on avait
-# contacté {_cap} comptes aléatoirement. La précision@{_cap} = {precision_cap:.1%} mesure
-# le taux de vrais churners dans ce top-{_cap} — c'est l'indicateur de **fatigue d'alerte**
-# (§12.12) : une précision trop faible épuise l'équipe CS sur de fausses alarmes.
+# %%
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** Le lift = **{_lift_cap:.2f}×** signifie que le modèle capture "
+        f"{_lift_cap:.1f} fois plus de churners parmi les {_cap} premiers comptes que si l'on avait "
+        f"contacté {_cap} comptes aléatoirement. La précision@{_cap} = **{precision_cap:.1%}** mesure "
+        f"le taux de vrais churners dans ce top-{_cap} — c'est l'indicateur de **fatigue d'alerte** "
+        "(§12.12) : une précision trop faible épuise l'équipe CS sur de fausses alarmes."
+    )
+)
 
 # %% [markdown]
 # ### 12.7 Analyse de sensibilité du seuil

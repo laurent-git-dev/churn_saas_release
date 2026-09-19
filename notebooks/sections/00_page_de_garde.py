@@ -100,12 +100,12 @@ display(env_df.style.hide(axis="index"))
 #
 # | Compétence | Intitulé court | Section(s) | Artefacts de preuve |
 # |---|---|---|---|
-# | **C1** | Identifier un jeu de données | §2, §3 | Entretien commanditaire simulé, dictionnaire de données, contrôles d'accès, plan B enrichissement |
-# | **C2** | Risques éthiques et sociétaux | §4 | Tableau HLEG + CNIL, biais (équité TPR/FPR), dilemmes, registre des risques, fiche DPO |
-# | **C3** | Préparer les données | §5, §7 | Rapport qualité, tableau renommage, DATASHEET.md, pipeline anti-fuite, journal de bord |
-# | **C4** | Choisir un modèle IA | §8 | Panorama familles, build vs buy, protocole de comparaison, cibles a priori, éco-conception |
-# | **C5** | Entraîner le modèle | §9 | Optuna, tableau hyperparamètres, feature engineering, réentraînement sur train+val |
-# | **C6** | Implémenter le modèle | §10 | CI/CD, versioning git+DVC+MLflow, contrat d'API, job CD sur tag |
-# | **C7** | Architecture cible | §11 | 3 scénarios (VM/conteneur/cloud managé), tableau coûts, CR entretien DSI/RSSI/DPO |
-# | **C8** | Mesurer la performance | §8, §12 | ROC/AUC, PR-AUC, KPI métier, ROI, carbone, SLO/SLI, note de restitution |
-# | **C9** | Amélioration continue | §13 | Gate qualité CI/CD, drift Evidently (PSI/KS), test robustesse, playbook réentraînement |
+# | **C1** | Cadrage du problème IA | §2, §4, §8 | Cas d'usage, valeur attendue, colonnes interdites, cibles de performance |
+# | **C2** | Données et gouvernance | §3, §5, §6 | Datasheet, contrôle qualité SHA-256, analyse EDA, détection des leurres |
+# | **C3** | Préparation des données | §7 | Pipeline ColumnTransformer, anti-fuite, `test_no_leakage.py`, jeu gold |
+# | **C4** | Éco-conception | §4, §9 | Tableau émissions CO₂ (CodeCarbon), arbitrage performance/carbone |
+# | **C5** | Choix et entraînement du modèle | §8, §9 | Comparatif PR-AUC 5 modèles, Optuna, gestion déséquilibre, note transfert learning |
+# | **C6** | Mise en exploitation | §10, §11 | TestClient (5 codes HTTP), gate MLflow, versioning 4 axes, CI/CD, Docker multi-stage |
+# | **C7** | Documentation et communication | §10, §14, §15 | Contrat API, table de décision seuil→action, annexes, glossaire |
+# | **C8** | Mesure de performance et impacts | §12 | PR-AUC/ROC-AUC/Brier OOF, seuil économique τ*, SHAP, verdict leurres 3 preuves, KPI |
+# | **C9** | Amélioration continue | §13 | Gate qualité CI/CD, PSI/KS, Evidently, robustesse, playbook réentraînement |
