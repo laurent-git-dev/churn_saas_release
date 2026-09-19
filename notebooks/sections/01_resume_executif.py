@@ -53,11 +53,28 @@ _best_params = _optuna.get("best_params", {})
 _n_essais = int(_optuna.get("n_essais_completes", 0))
 
 # ── Artefacts produits en §12 ─────────────────────────────────────────────────
+# probas_oof.joblib est écrit par §12. Sur un premier run propre (make notebook-full),
+# §12 n'a pas encore tourné ; la lambda retourne None et le fallback ci-dessous
+# évite le crash. Sur make notebook (cache actif), le fichier existe déjà.
 proba_oof, _ = charger_ou_calculer(
     "probas_oof.joblib",
     lambda: None,
 )
-proba_oof = np.asarray(proba_oof)
+
+if proba_oof is None:
+    display(
+        Markdown(
+            "⚠️ **`probas_oof.joblib` absent** — ce fichier est produit par §12. "
+            "Les métriques OOF affichées ci-dessous sont des **valeurs de substitution** "
+            "(prédicteur aléatoire à la prévalence). "
+            "Relancer `make notebook` après une première exécution complète pour obtenir "
+            "les vraies valeurs."
+        )
+    )
+    # Fallback : prédicteur aléatoire constant (PR-AUC ≈ prévalence, ROC-AUC ≈ 0,50)
+    proba_oof = np.full(len(y), float(y.mean()), dtype=float)
+
+proba_oof = np.asarray(proba_oof, dtype=float)
 
 pr_auc_oof = float(average_precision_score(y, proba_oof))
 roc_auc_oof = float(roc_auc_score(y, proba_oof))

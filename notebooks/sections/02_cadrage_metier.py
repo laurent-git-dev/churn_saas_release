@@ -127,14 +127,22 @@ gain_incremental_eur = (
 print(f"\n→ Gain incrémental du modèle vs intervention non ciblée : {gain_incremental_eur:,.0f} €/an")
 print("   (hypothèse : taux de succès sans modèle = 10 %)")
 
-# %% [markdown]
-# **Ce qu'il faut retenir.**
-# Avec une capacité de 45 gestes de rétention par mois et un taux de succès cible de 30 %
-# (source : Gainsight 2023), le modèle génère un gain incrémental estimé à
-# **~100 000–130 000 € par an** par rapport à une approche non ciblée, à confirmer dès §12
-# après mesure des métriques réelles. Ces chiffres sont intentionnellement conservateurs :
-# ils excluent l'effet d'image et les renouvellements spontanés induits par une meilleure
-# relation CSM-client.
+# %%
+from IPython.display import Markdown, display
+
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** "
+        f"Avec une capacité de {int(hyp['capacite_gestes_mois'])} gestes de rétention par mois "
+        f"et un taux de succès cible de {hyp['taux_succes_retention']:.0%} "
+        "(source : Gainsight 2023), le modèle génère un gain incrémental estimé à "
+        f"**{gain_incremental_eur:,.0f} €/an** par rapport à une approche non ciblée, "
+        "à confirmer dès §12 après mesure des métriques réelles. "
+        "Ces chiffres sont intentionnellement conservateurs : "
+        "ils excluent l'effet d'image et les renouvellements spontanés induits par une meilleure "
+        "relation CSM-client."
+    )
+)
 
 # %% [markdown]
 # ### 2.4 Hypothèses, contraintes et critères de réussite

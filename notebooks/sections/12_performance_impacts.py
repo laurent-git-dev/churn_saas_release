@@ -190,9 +190,12 @@ display(
 # #### 12.2.4 Tableau récapitulatif des métriques
 
 # %%
-# Le seuil économique est déterminé en §12.5 ; on anticipe avec 0,40 pour l'affichage initial
-_SEUIL_PROVISOIRE = 0.40
-df_metriques = eval_mod.tableau_metriques(y, proba_oof, _SEUIL_PROVISOIRE)
+# τ* est calculé ici en avance (sans afficher la courbe — voir §12.5 pour la figure)
+# afin que ce tableau récapitulatif utilise le bon seuil dès sa première apparition.
+_, _courbe_prelim, seuil_opt = economics.gain_par_seuil(y, proba_oof, MRR)
+plt.close("all")  # supprime la figure interne, non destinée à cette section
+
+df_metriques = eval_mod.tableau_metriques(y, proba_oof, seuil_opt)
 display(df_metriques.style.format({"valeur": "{:.4f}"}).hide(axis="index"))
 
 # %% [markdown]
