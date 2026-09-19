@@ -206,9 +206,7 @@ def entrainer_modeles_clv(
             ),
             (
                 "ridge_log",
-                Pipeline(
-                    [("prep", construire_preprocesseur(X_train)), ("reg", Ridge(alpha=1.0))]
-                ),
+                Pipeline([("prep", construire_preprocesseur(X_train)), ("reg", Ridge(alpha=1.0))]),
                 True,
             ),
             (

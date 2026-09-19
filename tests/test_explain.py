@@ -112,9 +112,7 @@ class TestImportanceImpurete:
         assert "mise_en_garde" in df.attrs
         assert "cardinalité" in df.attrs["mise_en_garde"]
 
-    def test_lr_utilise_coef(
-        self, modele_lr_entraine: LogisticRegression
-    ) -> None:
+    def test_lr_utilise_coef(self, modele_lr_entraine: LogisticRegression) -> None:
         """LR doit fonctionner via |coef_| avec la mise en garde adaptée."""
         df = importance_impurete(modele_lr_entraine)
         assert len(df) > 0
