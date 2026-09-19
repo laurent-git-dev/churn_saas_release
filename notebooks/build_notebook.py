@@ -64,11 +64,15 @@ def fusionner_sections(fichiers: list[Path]) -> nbformat.NotebookNode:
 
 def executer(nb: nbformat.NotebookNode) -> nbformat.NotebookNode:
     """Exécute le notebook avec nbclient et retourne le notebook avec sorties."""
+    # extra_arguments passe --IPKernelApp.log_level=ERROR au sous-processus kernel,
+    # ce qui supprime les deux warnings ipykernel sans affecter la capture des erreurs
+    # de cellule (celles-ci remontent via le protocole ZMQ, pas via stderr du kernel).
     client = nbclient.NotebookClient(
         nb,
         timeout=TIMEOUT_CELLULE,
         kernel_name="python3",
         resources={"metadata": {"path": str(RACINE)}},
+        extra_arguments=["--IPKernelApp.log_level=ERROR"],
     )
     client.execute()
     return nb

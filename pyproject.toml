@@ -82,3 +82,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --tb=short"
+markers = [
+    "slow: tests longs (entraînement ML en CV) — exclus du make check rapide",
+]
