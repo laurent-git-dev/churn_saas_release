@@ -527,59 +527,50 @@ df_gold = pd.read_parquet(chemin_gold)
 
 print(f"\nDataset gold : {df_gold.shape[0]} lignes × {df_gold.shape[1]} colonnes")
 
-# Schéma colonnes
+# Schéma colonnes — la fonction helper évite le ternaire multi-ligne ambigu
+_COLS_ENRICHI = frozenset(
+    [
+        "taux_churn_median_saas_pct",
+        "dynamique_croissance",
+        "ecart_adoption_secteur",
+        "zone_reglementaire",
+        "langue_support_fr",
+        "decalage_horaire_paris_h",
+    ]
+)
+_COLS_CATALOGUE_GOLD = frozenset(
+    ["prix_mensuel_par_siege_eur", "remise_consentie", "adequation_plan"]
+)
+_COLS_BRUTES_GOLD = frozenset(
+    [
+        "client_id", "date_souscription", "jour_souscription", "secteur", "pays",
+        "taille_entreprise", "plan", "anciennete_mois", "sieges_souscrits",
+        "utilisateurs_actifs", "taux_adoption_pct", "connexions_30j", "heures_usage_30j",
+        "fonctionnalites_total", "fonctionnalites_utilisees", "nb_integrations",
+        "derniere_connexion_jours", "tickets_support_90j", "delai_reponse_support_h",
+        "csat", "retards_paiement_12m", "revenu_mensuel_recurrent_eur",
+        "sante_compte_fin_periode", "valeur_vie_client_eur", "churn",
+        "couleur_theme_interface", "code_datacenter", "groupe_experimentation", "commentaire_csm",
+    ]
+)
+
+
+def _origine_colonne(col: str) -> str:
+    if col in _COLS_ENRICHI:
+        return "enrichissement_simule"
+    if col in _COLS_CATALOGUE_GOLD:
+        return "catalogue"
+    if col in _COLS_BRUTES_GOLD:
+        return "brute"
+    return "feature_metier"
+
+
 schema = pd.DataFrame(
     {
         "colonne": df_gold.columns,
-        "dtype": [str(df_gold[c].dtype) for c in df_gold.columns],
-        "manquants_pct": [round(df_gold[c].isna().mean() * 100, 1) for c in df_gold.columns],
-        "origine": [
-            "enrichissement_simule"
-            if c in [
-                "taux_churn_median_saas_pct",
-                "dynamique_croissance",
-                "ecart_adoption_secteur",
-                "zone_reglementaire",
-                "langue_support_fr",
-                "decalage_horaire_paris_h",
-            ]
-            else "catalogue"
-            if c in ["prix_mensuel_par_siege_eur", "remise_consentie", "adequation_plan"]
-            else "feature_metier"
-            if c
-            not in [
-                "client_id",
-                "date_souscription",
-                "jour_souscription",
-                "secteur",
-                "pays",
-                "taille_entreprise",
-                "plan",
-                "anciennete_mois",
-                "sieges_souscrits",
-                "utilisateurs_actifs",
-                "taux_adoption_pct",
-                "connexions_30j",
-                "heures_usage_30j",
-                "fonctionnalites_total",
-                "fonctionnalites_utilisees",
-                "nb_integrations",
-                "derniere_connexion_jours",
-                "tickets_support_90j",
-                "delai_reponse_support_h",
-                "csat",
-                "retards_paiement_12m",
-                "revenu_mensuel_recurrent_eur",
-                "sante_compte_fin_periode",
-                "valeur_vie_client_eur",
-                "churn",
-                "couleur_theme_interface",
-                "code_datacenter",
-                "groupe_experimentation",
-                "commentaire_csm",
-            ]
-            else "brute"
-        ],
+        "dtype": [str(df_gold[col].dtype) for col in df_gold.columns],
+        "manquants_pct": [round(df_gold[col].isna().mean() * 100, 1) for col in df_gold.columns],
+        "origine": [_origine_colonne(col) for col in df_gold.columns],
     }
 ).set_index("colonne")
 
