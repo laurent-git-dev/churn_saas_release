@@ -11,6 +11,7 @@
 # d'autres fuites potentielles (§6.4).
 
 # %%
+import matplotlib.pyplot as plt
 import pandas as pd
 from IPython.display import Markdown, display
 
@@ -109,6 +110,10 @@ _COLS_NUM_EDA = [
 ]
 
 figs_num, tableau_num = eda.univarie_numeriques(df_eda, _COLS_NUM_EDA)
+# Les {len(_COLS_NUM_EDA)} histogrammes sont sauvegardés dans reports/figures/ par viz.sauvegarder()
+# (appelé en interne). On les ferme ici pour ne pas surcharger le notebook de 15 figures
+# identiques ; le tableau de synthèse ci-dessous condense toute l'information pertinente.
+plt.close("all")
 display(tableau_num.round(2))
 
 # %%
@@ -116,9 +121,10 @@ _n_asym = int((tableau_num["asymétrie"].abs() > 1).sum())
 _n_outliers_tot = int(tableau_num["n_outliers_IQR"].sum())
 display(
     Markdown(
-        f"**Ce qu'il faut retenir.** Sur {len(_COLS_NUM_EDA)} variables numériques : "
-        f"**{_n_asym}** présentent une asymétrie forte (|asymétrie| > 1), "
-        f"ce qui indique des distributions à longue queue droite typiques de métriques SaaS "
+        f"**Ce qu'il faut retenir.** Le tableau ci-dessus synthétise les {len(_COLS_NUM_EDA)} "
+        f"distributions numériques (histogrammes individuels dans `reports/figures/`). "
+        f"**{_n_asym}** variables présentent une asymétrie forte (|asymétrie| > 1), "
+        f"signe de distributions à longue queue droite typiques des métriques SaaS "
         f"(revenus, tickets, ancienneté). "
         f"Le total d'outliers IQR est **{_n_outliers_tot}**. "
         f"La standardisation (StandardScaler) du pipeline §7 réduit leur impact "
@@ -145,6 +151,9 @@ _COLS_CAT_EDA = [
 ]
 
 figs_cat, tableau_cat = eda.univarie_categorielles(df_eda, _COLS_CAT_EDA, seuil_rare=10)
+# Les {len(_COLS_CAT_EDA)} diagrammes en barres sont sauvegardés dans reports/figures/.
+# Fermeture pour ne pas multiplier les sorties notebook ; le tableau suffit à l'analyse.
+plt.close("all")
 display(tableau_cat)
 
 # %%
@@ -152,8 +161,9 @@ _n_incoh = int(tableau_cat["incohérences_casse"].sum())
 _n_rares_tot = int(tableau_cat["n_modalités_rares"].sum())
 display(
     Markdown(
-        f"**Ce qu'il faut retenir.** "
-        f"**{_n_incoh} incohérence(s) de casse** détectée(s) au total (ex. 'STARTUP' vs 'Startup') "
+        f"**Ce qu'il faut retenir.** Le tableau ci-dessus synthétise les {len(_COLS_CAT_EDA)} "
+        f"variables catégorielles (diagrammes en barres dans `reports/figures/`). "
+        f"**{_n_incoh} incohérence(s) de casse** détectée(s) (ex. 'STARTUP' vs 'Startup') "
         f"— normalisées en §7. "
         f"**{_n_rares_tot} modalité(s) rare(s)** (effectif < 10) : "
         f"elles seront regroupées dans une catégorie 'Autre' lors de l'encodage "
