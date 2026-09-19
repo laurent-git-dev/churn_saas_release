@@ -139,7 +139,7 @@ def evaluer_modele(
 # ---------------------------------------------------------------------------
 
 
-class RegleMetierClassifier(BaseEstimator, ClassifierMixin):
+class RegleMetierClassifier(BaseEstimator, ClassifierMixin):  # type: ignore[misc]
     """Baseline B1 : règle SQL encapsulée en estimateur sklearn.
 
     fit() ne fait rien (pas de paramètre appris).
@@ -295,7 +295,7 @@ def journaliser_mlflow(
         except Exception as exc:
             logger.warning("MLflow : impossible de logguer le modèle '{}' — {}", nom, exc)
 
-        run_id = run.info.run_id
+        run_id: str = str(run.info.run_id)
 
     logger.info("MLflow run créé — nom='{}', run_id={}", nom, run_id)
     return run_id
@@ -310,7 +310,7 @@ def comparer_desequilibre(
     X: pd.DataFrame,
     y: pd.Series,
     df_ref: pd.DataFrame,
-) -> tuple[pd.DataFrame, dict[str, dict]]:
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Compare class_weight='balanced' vs SMOTE sur régression logistique.
 
     SMOTE est appliqué DANS le pipeline imblearn — jamais hors CV.
@@ -362,7 +362,7 @@ def comparer_desequilibre(
         ),
     }
 
-    donnees_calibration: dict[str, dict] = {}
+    donnees_calibration: dict[str, Any] = {}
     resultats = []
     y_arr = np.asarray(y)
 
