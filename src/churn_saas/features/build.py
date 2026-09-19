@@ -314,15 +314,18 @@ def joindre_catalogue(df: pd.DataFrame, catalogue: pd.DataFrame) -> pd.DataFrame
     # Adéquation au plan : classification du taux d'utilisation des sièges
     utilisateurs = pd.to_numeric(df.get("utilisateurs_actifs"), errors="coerce")
     taux_util = utilisateurs / sieges.where(sieges > 0)
-    df["adequation_plan"] = np.select(
-        [
-            taux_util.isna(),
-            taux_util >= 0.9,  # quasi-saturation → sous-dimensionné
-            taux_util < 0.5,  # sièges très sous-utilisés → sur-dimensionné
-        ],
-        [None, "sous-dimensionne", "sur-dimensionne"],
-        default="adapte",
+    # np.select ne tolère pas None dans les choix (contrainte mypy) ; on construit en deux temps
+    _adequation: pd.Series = pd.Series(
+        np.select(
+            [taux_util >= 0.9, taux_util < 0.5],
+            ["sous-dimensionne", "sur-dimensionne"],
+            default="adapte",
+        ),
+        index=df.index,
+        dtype=object,
     )
+    _adequation[taux_util.isna()] = None  # sieges=0 ou utilisateurs NaN → valeur manquante
+    df["adequation_plan"] = _adequation
 
     logger.info(
         "joindre_catalogue — {} lignes enrichies, {} colonnes catalogue + 2 features dérivées",
