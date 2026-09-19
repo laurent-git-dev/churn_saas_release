@@ -54,6 +54,9 @@ dev = [
     "pre-commit>=3.7",
 ]
 
+[project.scripts]
+churn-saas = "churn_saas.cli:app"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/churn_saas"]
 

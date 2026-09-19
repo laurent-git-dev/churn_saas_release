@@ -1,5 +1,18 @@
 # Données et artefacts (exclus de git, présents dans le ZIP final)
-/data/
+# Les pointeurs DVC (*.dvc) et les .gitignore générés par DVC restent dans git
+/data/*
+!/data/raw/
+/data/raw/*
+!/data/raw/*.dvc
+!/data/raw/.gitignore
+!/data/interim/
+/data/interim/*
+!/data/interim/*.dvc
+!/data/interim/.gitignore
+!/data/gold/
+/data/gold/*
+!/data/gold/*.dvc
+!/data/gold/.gitignore
 /mlruns/
 /artifacts/
 /reports/figures/
