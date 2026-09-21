@@ -603,9 +603,9 @@ risques_resume = [
 display(pd.DataFrame(risques_resume).set_index("ID"))
 
 # %%
-from pathlib import Path
+from churn_saas import config
 
-_risk_register = Path("docs/RISK_REGISTER.md")
+_risk_register = config.RACINE / "docs" / "RISK_REGISTER.md"
 assert _risk_register.exists(), (
     "docs/RISK_REGISTER.md introuvable — vérifier que le fichier est inclus dans le ZIP de livraison."
 )
