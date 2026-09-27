@@ -16,6 +16,8 @@ git -C "$TMP_DIR/public" filter-repo --invert-paths \
   --path 'docs/PROMPTS.md' \
   --path 'docs/PLAN_10_JOURS.md' \
   --path 'docs/CHECKLIST_LIVRAISON.md' \
+  --path 'docs/POINTS_DE_VIGILANCE.md' \
+  --path 'docs/POINTS_DE_VIGILANCE.pdf' \
   --path 'docs/QUESTIONS_JURY.md' \
   --path 'docs/QUESTIONS_JURY.pdf' \
   --path 'docs/RAPPORT_COMPETENCES_C1_C9.md' \
@@ -39,6 +41,7 @@ git -C "$TMP_DIR/public" \
 LEAK=0
 for path in docs/legacy docs/CONTEXTE_EPREUVE.md docs/PROMPTS.md \
             docs/PLAN_10_JOURS.md docs/CHECKLIST_LIVRAISON.md \
+            docs/POINTS_DE_VIGILANCE.md docs/POINTS_DE_VIGILANCE.pdf \
             docs/QUESTIONS_JURY.md docs/QUESTIONS_JURY.pdf \
           	docs/RAPPORT_COMPETENCES_C1_C9.md docs/RAPPORT_COMPETENCES_C1_C9.pdf \
 	          docs/RAPPORT_TECHNIQUE_COMPLET.md docs/RAPPORT_TECHNIQUE_COMPLET.pdf \
