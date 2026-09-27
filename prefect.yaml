@@ -1,0 +1,55 @@
+# prefect.yaml — configuration des déploiements Prefect 3 pour le projet churn-saas
+#
+# Usage :
+#   Installation  : uv sync --extra mlops
+#   Déploiement   : uv run prefect deploy --all
+#   Run manuel    : uv run prefect run deployment batch-scoring-nocturne/nocturne
+#   Serveur local : uv run prefect server start  (optionnel — flows.py s'exécute aussi en local runner)
+#
+# Pour la certification CISIA, les flows s'exécutent en mode "local runner" (sans serveur)
+# directement depuis le notebook ou via `make score`. Le present fichier documente la
+# configuration de production et justifie la compétence C6 (mise en exploitation).
+
+# Nom du projet Prefect — correspond au namespace affiché dans l'UI Prefect
+name: churn-saas
+
+# Version du moteur Prefect ciblée
+prefect-version: "3.x"
+
+# ---------------------------------------------------------------------------
+# Définitions des déploiements
+# Un déploiement = une version planifiable d'un flow (horaire, paramètres, infra)
+# ---------------------------------------------------------------------------
+deployments:
+
+  - name: nocturne
+    # Identifiant du flow : chemin_du_fichier:nom_de_la_fonction
+    entrypoint: flows/scoring_batch.py:batch_scoring_nocturne
+
+    # --- Planification ---
+    # Expression cron : minute heure jour_du_mois mois jour_de_la_semaine
+    # "0 2 * * *" = chaque nuit à 2h00 — fenêtre creuse avant la synchronisation CRM (6h)
+    schedule:
+      cron: "0 2 * * *"
+      timezone: "Europe/Paris"
+
+    # --- Paramètres du flow ---
+    # date_ref laissé à None → le flow utilise la date du jour automatiquement
+    parameters:
+      date_ref: null
+
+    # --- Gestion des erreurs ---
+    # En production, ajouter ici les notifications Slack (voir docs Prefect automations)
+    # notifications: []
+
+    # --- Infrastructure ---
+    # Par défaut : process worker local (aucun Docker ni Kubernetes requis)
+    # Pour un déploiement cloud : remplacer par un work-pool Kubernetes ou ECS
+    work_pool:
+      name: default-agent-pool   # à créer via `prefect work-pool create default-agent-pool`
+      # job_variables:
+      #   image: ghcr.io/lpottier/churn-saas:latest   # si Docker activé
+
+    # --- Idempotence ---
+    # Le flow est idempotent sur la date : relancer deux fois la même nuit n'écrase pas les scores
+    # (voir flows/scoring_batch.py — task publier_scores)

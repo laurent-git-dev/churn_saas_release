@@ -40,6 +40,7 @@ mlops = [
     "mlflow>=2.14",
     "dvc>=3.51",
     "evidently>=0.4",
+    "prefect>=3.0",
 ]
 api = [
     "fastapi>=0.111",
