@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from churn_saas.api import main as api_main
 from churn_saas.api.main import app
 from churn_saas.api.model_store import get_model_store
 
@@ -192,3 +193,33 @@ def test_predict_batch_un_compte(client_pret):
     resp = client_pret.post("/predict-batch", json=[_EXEMPLE_VALIDE])
     assert resp.status_code == 200
     assert resp.json()["nb_comptes"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests données de référence absentes — le service est indisponible, pas dégradé
+# ---------------------------------------------------------------------------
+
+
+def test_ready_503_sans_catalogue(client_pret, monkeypatch, tmp_path):
+    """Modèle chargé mais catalogue des plans absent → le service n'est pas « prêt »."""
+    monkeypatch.setattr(api_main, "_CHEMIN_CATALOGUE", tmp_path / "catalogue_absent.csv")
+    api_main._catalogue.cache_clear()
+    resp = client_pret.get("/ready")
+    assert resp.status_code == 503
+    assert "référence" in resp.json()["detail"]
+
+
+def test_predict_503_sans_catalogue(client_pret, monkeypatch, tmp_path):
+    """Sans catalogue, l'enrichissement serait vide : on refuse au lieu de scorer faux."""
+    monkeypatch.setattr(api_main, "_CHEMIN_CATALOGUE", tmp_path / "catalogue_absent.csv")
+    api_main._catalogue.cache_clear()
+    resp = client_pret.post("/predict", json=_EXEMPLE_VALIDE)
+    assert resp.status_code == 503
+
+
+def test_predict_batch_503_sans_catalogue(client_pret, monkeypatch, tmp_path):
+    """Même refus côté batch."""
+    monkeypatch.setattr(api_main, "_CHEMIN_CATALOGUE", tmp_path / "catalogue_absent.csv")
+    api_main._catalogue.cache_clear()
+    resp = client_pret.post("/predict-batch", json=[_EXEMPLE_VALIDE])
+    assert resp.status_code == 503

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, status
+from loguru import logger
 from prometheus_client import Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -32,12 +34,54 @@ from churn_saas.features.enrichissement import enrichir_par_pays, enrichir_par_s
 _VERSION = "0.1.0"
 _MAX_BATCH = 1_000
 
-_CATALOGUE = pd.read_csv(config.DONNEES_BRUTES / "catalogue_plans.csv")
+_CHEMIN_CATALOGUE = config.DONNEES_BRUTES / "catalogue_plans.csv"
+
+
+@lru_cache(maxsize=1)
+def _catalogue() -> pd.DataFrame:
+    """Catalogue des plans — chargé à la première prédiction, jamais à l'import.
+
+    `data/raw/` fait partie des livrables mais n'est pas versionné : lire ce CSV au
+    chargement du module rendait `churn_saas.api.main` — et donc tous les tests qui
+    l'importent — impossible à importer en CI. Le chargement est différé et mémoïsé ;
+    l'absence du fichier devient un 503 explicite au lieu d'un crash à l'import.
+    """
+    if not _CHEMIN_CATALOGUE.exists():
+        raise FileNotFoundError(
+            f"Catalogue des plans introuvable : {_CHEMIN_CATALOGUE}. "
+            "Les données de référence doivent être déployées avec le service."
+        )
+    return pd.read_csv(_CHEMIN_CATALOGUE)
+
+
+def _catalogue_disponible() -> bool:
+    """Vrai si les données de référence nécessaires à l'enrichissement sont présentes."""
+    return _CHEMIN_CATALOGUE.exists()
+
+
+def _exiger_catalogue() -> None:
+    """Refuse de scorer sans données de référence — 503, jamais un score dégradé.
+
+    Sans le catalogue, `joindre_catalogue` produirait des colonnes vides que le pipeline
+    imputerait : le modèle répondrait quand même, sur des features fausses. Mieux vaut
+    une indisponibilité franche qu'une prédiction silencieusement dégradée.
+    """
+    if not _catalogue_disponible():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Données de référence absentes : {_CHEMIN_CATALOGUE.name} introuvable.",
+        )
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     get_model_store().charger()
+    if not _catalogue_disponible():
+        logger.warning(
+            "Catalogue des plans absent ({}) — /ready retournera 503 et /predict refusera "
+            "de scorer : l'enrichissement commercial serait incomplet.",
+            _CHEMIN_CATALOGUE,
+        )
     yield
 
 
@@ -87,7 +131,7 @@ def _demande_vers_dataframe(demandes: list[DemandePredicton]) -> pd.DataFrame:
     donnees = [d.model_dump() for d in demandes]
     df = pd.DataFrame(donnees)
     df = ajouter_features_metier(df, csat_median_par_secteur=None)
-    df = joindre_catalogue(df, _CATALOGUE)
+    df = joindre_catalogue(df, _catalogue())
     df = enrichir_par_secteur(df)
     df = enrichir_par_pays(df)
     return df
@@ -195,11 +239,20 @@ async def health() -> dict[str, Any]:
 async def ready(
     store: Annotated[ModelStore, Depends(get_model_store)],
 ) -> dict[str, Any]:
-    """Sonde readiness — retourne 503 si le modèle n'est pas encore chargé."""
+    """Sonde readiness — 503 tant que le modèle *ou* les données de référence manquent.
+
+    Un service capable de répondre mais privé de son catalogue de plans produirait des
+    features incomplètes : il n'est pas « prêt », il est dégradé.
+    """
     if not store.est_pret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Modèle non chargé. Exécutez `churn-saas train` pour entraîner.",
+        )
+    if not _catalogue_disponible():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Données de référence absentes : {_CHEMIN_CATALOGUE.name} introuvable.",
         )
     return {
         "statut": "pret",
@@ -233,13 +286,14 @@ async def predict(
     - **422** : données d'entrée invalides (bornes, types) ou champ obligatoire absent.
     - **401** : clé d'API manquante ou incorrecte.
     - **429** : quota dépassé (60 req/min par IP).
-    - **503** : modèle non disponible (exécuter `churn-saas train`).
+    - **503** : modèle ou données de référence non disponibles.
     """
     if not store.est_pret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Modèle non disponible.",
         )
+    _exiger_catalogue()
     X = _demande_vers_dataframe([demande])
     probas = store.predire(X)
     resultat = _construire_resultat(demande, float(probas[0, 1]), store.seuil)
@@ -278,6 +332,7 @@ async def predict_batch(
             detail=f"Lot trop grand : {_MAX_BATCH} comptes maximum par requête.",
         )
 
+    _exiger_catalogue()
     X = _demande_vers_dataframe(demandes)
     probas = store.predire(X)[:, 1]
 
