@@ -4,5 +4,7 @@
   "nb_alertes_rouges": 1508,
   "nb_surveillances": 680,
   "nb_ok": 2812,
-  "valeur_totale_a_risque_eur": 68065275.24
+  "valeur_totale_a_risque_eur": 49006998.01,
+  "nb_comptes_valorises": 4850,
+  "nb_comptes_sans_mrr": 150
 }

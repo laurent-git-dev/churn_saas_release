@@ -494,9 +494,11 @@ display(Markdown(
 # %% [markdown]
 # **Dashboard Grafana.** Le fichier `monitoring/grafana/dashboard.json` définit
 # un tableau de bord importable directement dans Grafana (Provision API ou UI
-# Import → JSON). Il surveille : disponibilité de l'API, latence p50/p95 sur
-# `/predict`, et compteurs de prédictions par classe (`ALERTE_ROUGE`, `SURVEILLANCE`,
-# `OK`).
+# Import → JSON), organisé en trois rangées : **disponibilité** (statut `up`, débit),
+# **latence** (p50/p95/p99 sur `/predict` avec le SLO 200 ms, taux d'erreur 4xx+5xx) et
+# **sortie du modèle et qualité des entrées** (prédictions par décision, champs manquants
+# reçus). Les deux derniers panels s'appuient sur les compteurs métier de `api/main.py`
+# affichés plus bas.
 #
 # **Fatigue d'alerte.** Un seuil trop sensible (ex. : alerter dès que la latence
 # dépasse 50 ms) génère des alertes fréquentes qui finissent par être ignorées.
@@ -512,31 +514,51 @@ display(Markdown(
 # Le délai `for: 5m` ajoute une deuxième couche de filtrage.
 #
 # %%
-# Affichage du compteur de taux de prévision instrumenté dans l'API (preuve C9)
+# Extraction des compteurs métier instrumentés dans l'API (preuve C9) — on isole
+# chaque déclaration `Counter(...)` complète plutôt que des lignes filtrées par mots-clés
 chemin_api = config.RACINE / "src" / "churn_saas" / "api" / "main.py"
-contenu_api = chemin_api.read_text(encoding="utf-8")
-lignes_compteur = [
-    l for l in contenu_api.split("\n")
-    if any(kw in l for kw in [
-        "churn_predictions_total", "Counter(", "_PREDICTIONS_COUNTER", "prometheus_client",
-    ])
-]
+lignes_api = chemin_api.read_text(encoding="utf-8").split("\n")
+
+blocs_compteurs: list[str] = []
+for _i, _ligne in enumerate(lignes_api):
+    if "= Counter(" not in _ligne:
+        continue
+    _bloc = []
+    for _suite in lignes_api[_i:]:
+        _bloc.append(_suite)
+        if _suite.startswith(")"):
+            break
+    blocs_compteurs.append("\n".join(_bloc))
+
+# Lignes d'incrémentation — preuve que les compteurs sont réellement alimentés
+lignes_inc = [_l.strip() for _l in lignes_api if ".labels(" in _l and ".inc()" in _l]
+
 display(Markdown(
-    "**Compteur Prometheus `churn_predictions_total` dans `api/main.py`** :\n\n"
-    f"```python\n{chr(10).join(lignes_compteur)}\n```\n\n"
-    "Le label `decision` (ALERTE_ROUGE / SURVEILLANCE / OK) permet de suivre "
-    "le **taux de prévision par classe** en temps réel et de détecter une dérive "
-    "de sortie — par exemple une explosion soudaine du taux `ALERTE_ROUGE` — "
-    "même sans dérive détectée sur les entrées."
+    "**Compteurs Prometheus déclarés dans `api/main.py`** :\n\n"
+    f"```python\n{chr(10).join(blocs_compteurs)}\n```\n\n"
+    "**Incrémentation** (dans `_construire_resultat` et les routes de prédiction) :\n\n"
+    f"```python\n{chr(10).join(lignes_inc)}\n```\n\n"
+    f"Nombre de compteurs métier exposés sur `/metrics` : **{len(blocs_compteurs)}**.\n\n"
+    "- `churn_predictions_total{decision}` suit le **taux de prévision par classe** "
+    "(ALERTE_ROUGE / SURVEILLANCE / OK) : une explosion du taux `ALERTE_ROUGE` révèle une "
+    "dérive de sortie, même sans dérive détectée sur les entrées.\n"
+    "- `churn_champs_imputes_total{champ}` suit la **manquance des données reçues** : "
+    "chaque champ absent d'une demande (donc reconstruit par le pipeline, cf. §10.2) "
+    "incrémente son compteur. Une rupture d'intégration CRM — un champ qui cesse "
+    "brutalement d'être transmis — se voit ici *avant* que le score ne dérive."
 ))
 
 # %% [markdown]
-# **Ce qu'il faut retenir.** Le compteur `churn_predictions_total` complète le
-# dispositif de monitoring : il est exposé sur `/metrics` (scraped par Prometheus)
-# et visible dans le dashboard Grafana. Combiné au PSI/KS sur les entrées (§13.3)
-# et à l'indicateur d'obsolescence (§13.6), il forme un monitoring à trois niveaux :
-# dérive d'entrée (immédiate), dérive de sortie (immédiate), dégradation de performance
-# (décalée, après obtention des étiquettes — §13.7).
+# **Ce qu'il faut retenir.** Les deux compteurs métier complètent le dispositif de
+# monitoring : ils sont exposés sur `/metrics` (registre par défaut de `prometheus_client`,
+# scrapé par Prometheus) et tracés dans le dashboard Grafana. Combinés au PSI/KS sur les
+# entrées (§13.3) et à l'indicateur d'obsolescence (§13.6), ils forment un monitoring à
+# **quatre niveaux**, du plus précoce au plus tardif : qualité des entrées reçues
+# (immédiate — `churn_champs_imputes_total`), dérive statistique d'entrée (immédiate —
+# PSI/KS), dérive de sortie (immédiate — `churn_predictions_total`), dégradation de
+# performance (décalée, après obtention des étiquettes — §13.7). L'ordre compte : une
+# manquance amont fausse les features avant de déplacer la distribution des scores, donc
+# elle doit être surveillée en premier.
 
 # %% [markdown]
 # ### 13.9.1 — Simulation des données de monitoring (Grafana)
@@ -544,7 +566,8 @@ display(Markdown(
 # Pour prouver le fonctionnement de la chaîne Prometheus → Grafana sans
 # nécessiter une stack live, on génère des métriques synthétiques réalistes
 # (intervalle 30 s, conforme au `scrape_interval` de `prometheus.yml`) couvrant
-# les 4 panels du dashboard `monitoring/grafana/dashboard.json`.
+# les six panels de données du dashboard `monitoring/grafana/dashboard.json` :
+# statut, débit, latence, taux d'erreur, prédictions par décision et champs manquants.
 
 # %%
 # Génération des séries temporelles synthétiques (2 h à 30 s d'intervalle)
@@ -585,6 +608,19 @@ _pred_alerte = np.cumsum((_rng.poisson(12 * _taux_alerte)).astype(int) * _up)
 _pred_surv = np.cumsum((_rng.poisson(12 * _taux_surv)).astype(int) * _up)
 _pred_ok = np.cumsum((_rng.poisson(12 * _taux_ok)).astype(int) * _up)
 
+# Manquance amont (churn_champs_imputes_total) : `csat` structurellement absent de ~8 %
+# des demandes (taux nominal du CRM), tandis que `secteur` cesse d'être transmis à
+# t = index 150 — rupture d'intégration simulée, 5 % → 60 % des demandes
+_taux_csat_absent = (0.08 + _rng.normal(0, 0.006, _n)).clip(min=0)
+_idx_rupture = 150
+_taux_secteur_absent = np.concatenate(
+    [np.full(_idx_rupture, 0.05), np.full(_n - _idx_rupture, 0.60)]
+) + _rng.normal(0, 0.006, _n)
+_taux_secteur_absent = _taux_secteur_absent.clip(min=0)
+# Conversion en demandes/min concernées (le panel Grafana affiche un rate() équivalent)
+_manque_csat = _req * 60 * _taux_csat_absent
+_manque_secteur = _req * 60 * _taux_secteur_absent
+
 df_metriques = pd.DataFrame({
     "ts": _ts,
     "up": _up,
@@ -596,6 +632,8 @@ df_metriques = pd.DataFrame({
     "predictions_ok": _pred_ok,
     "predictions_surveillance": _pred_surv,
     "predictions_alerte_rouge": _pred_alerte,
+    "manque_csat_par_min": _manque_csat,
+    "manque_secteur_par_min": _manque_secteur,
 })
 df_metriques.head(3)
 
@@ -737,6 +775,46 @@ ax.set_xlabel("Heure")
 ax.legend(loc="upper left", fontsize=9)
 viz.sauvegarder(fig)
 
+# %%
+# Figure 4 — Manquance des données reçues (churn_champs_imputes_total par champ)
+fig, ax = viz.figure(
+    "monitoring_champs_manquants",
+    "Champs absents des demandes reçues — détection d'une rupture d'intégration",
+    taille=(12, 5),
+)
+
+ax.plot(
+    df_metriques["ts"],
+    df_metriques["manque_csat_par_min"],
+    label="csat absent (~8 % — nominal)",
+    color=viz.PALETTE_PRINCIPALE[0],
+    linewidth=1.4,
+)
+ax.plot(
+    df_metriques["ts"],
+    df_metriques["manque_secteur_par_min"],
+    label="secteur absent (rupture CRM)",
+    color=viz.COULEUR_CHURN,
+    linewidth=1.4,
+)
+
+_t_rupture = df_metriques.loc[_idx_rupture, "ts"]
+ax.axvline(_t_rupture, linestyle="--", color=viz.COULEUR_CHURN, linewidth=1.0)
+ax.annotate(
+    "Rupture d'intégration : `secteur` cesse d'être transmis\n"
+    "(5 % → 60 % des demandes) — visible avant toute dérive du score",
+    xy=(_t_rupture, float(df_metriques["manque_secteur_par_min"].max()) * 0.80),
+    xytext=(df_metriques.loc[20, "ts"], float(_manque_secteur.max()) * 0.50),
+    arrowprops={"arrowstyle": "->", "color": viz.COULEUR_CHURN},
+    fontsize=9,
+    color=viz.COULEUR_CHURN,
+)
+
+ax.set_ylabel("Demandes/min avec champ absent")
+ax.set_xlabel("Heure")
+ax.legend(loc="upper left", fontsize=9)
+viz.sauvegarder(fig)
+
 # %% [markdown]
 # **Ce qu'il faut retenir.** La règle `for:5m` dans `alerts.yml` ajoute une
 # deuxième couche de filtrage après la fenêtre `rate(...[5m])` : un pic de latence
@@ -747,7 +825,14 @@ viz.sauvegarder(fig)
 # +6 pp de prédictions `ALERTE_ROUGE` sur 2 heures — est un signal distinct et
 # complémentaire au PSI sur les entrées (§13.3) : une dérive de sortie peut apparaître
 # sans dérive d'entrée détectable (changement de comportement client sans changement
-# de données). Ces trois panels sont le miroir exact de ceux de
+# de données). La quatrième figure illustre le signal le plus précoce de la chaîne : la
+# manquance des champs reçus. Une rupture d'intégration CRM — ici `secteur` qui passe de
+# 5 % à 60 % de demandes incomplètes — n'apparaît ni dans le taux d'erreur (les requêtes
+# restent valides : le champ est nullable, la réponse est un 200) ni immédiatement dans la
+# distribution des scores, puisque le pipeline impute. Elle se voit en revanche
+# instantanément sur `churn_champs_imputes_total`, ce qui laisse le temps de corriger la
+# source avant que les décisions de rétention ne reposent sur des valeurs estimées.
+# Ces quatre figures sont le miroir des six panels de données de
 # `monitoring/grafana/dashboard.json` (mêmes métriques, mêmes seuils SLO),
 # importable directement dans Grafana via UI Import ou l'API de provisionnement.
 
@@ -882,11 +967,19 @@ display(df_c9)
 # > La migration vers Prefect ne nécessite que l'ajout des décorateurs `@flow`/`@task`.
 # > Deux règles d'alerte Prometheus calibrées pour éviter la fatigue d'alerte (délais
 # > `for: 1m` et `for: 5m`). Délai d'obtention des étiquettes traité explicitement
-# > via le groupe témoin (§4) et l'évaluation par cohortes.
+# > via le groupe témoin (§4) et l'évaluation par cohortes. Monitoring porté à quatre
+# > niveaux en ajoutant la **qualité des entrées reçues** (`churn_champs_imputes_total`,
+# > par champ) en amont de la dérive statistique : un champ qui cesse d'être transmis par
+# > le CRM ne produit ni erreur HTTP ni dérive immédiate du score, puisque le contrat
+# > d'entrée l'accepte et que le pipeline impute (§10.2) — sans ce compteur, la panne
+# > d'intégration resterait invisible jusqu'à la dégradation des performances.
 # >
 # > **Alternatives écartées** — Prefect Cloud (infrastructure supplémentaire non
 # > disponible lors de la certification) ; Airflow (trop lourd pour un projet mono-équipe) ;
 # > alertes sur latence p99 plutôt que latence moyenne (trop volatile sur petit volume).
+# > Règle d'alerte automatique sur la manquance : écartée à ce stade faute de référence de
+# > production (le seuil serait arbitraire) — le panel Grafana et la revue hebdomadaire
+# > suffisent tant que le trafic réel n'a pas fourni une baseline par champ.
 # >
 # > **Difficultés rencontrées** — Idempotence du flow : les marqueurs de date créent
 # > un couplage temporel (un flow déjà exécuté le même jour est ignoré) ; résolu en

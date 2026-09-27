@@ -1,0 +1,11 @@
+client_id,anciennete_mois,sieges_souscrits,utilisateurs_actifs,taux_adoption_pct,connexions_30j,heures_usage_30j,fonctionnalites_total,fonctionnalites_utilisees,nb_integrations,derniere_connexion_jours,tickets_support_90j,delai_reponse_support_h,csat,retards_paiement_12m,revenu_mensuel_recurrent_eur,secteur,pays,taille_entreprise,plan
+DEMO-001,42,60,55,82.0,140,250.0,20,17,6,1,0,3.0,9.0,0,6500.0,Technologie,France,PME,Business
+DEMO-002,28,35,30,75.0,90,180.0,16,14,4,3,1,5.0,8.0,0,3800.0,Services,Allemagne,PME,Pro
+DEMO-003,60,100,88,71.0,200,400.0,40,32,8,1,0,,8.5,0,12000.0,Finance,Suisse,ETI,Enterprise
+DEMO-004,18,25,14,38.0,18,40.0,16,7,1,22,3,,6.8,1,2200.0,Commerce,Espagne,TPE,Pro
+DEMO-005,10,15,8,32.0,12,,20,5,1,28,5,36.0,6.0,2,1800.0,Services,Belgique,TPE,Starter
+DEMO-006,22,30,12,29.0,10,20.0,26,7,2,31,6,,5.5,1,3000.0,Santé,France,PME,Business
+DEMO-007,8,20,9,21.0,6,10.0,26,5,0,45,10,52.0,4.0,4,2800.0,Finance,France,PME,Business
+DEMO-008,14,30,11,18.0,5,,30,4,1,38,8,60.0,3.5,3,3500.0,Industrie,Italie,PME,Business
+DEMO-009,6,25,8,24.0,7,8.0,26,4,0,50,12,,4.5,5,2400.0,Commerce,Portugal,TPE,Pro
+DEMO-010,20,40,14,19.0,9,12.0,40,6,1,47,11,48.0,3.0,2,4200.0,Finance,Pays-Bas,PME,Enterprise

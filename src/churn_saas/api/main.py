@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from prometheus_client import Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from churn_saas import config
+from churn_saas import config, economie
 from churn_saas.api.model_store import ModelStore, get_model_store
 from churn_saas.api.schemas import (
     DemandePredicton,
@@ -19,16 +19,20 @@ from churn_saas.api.schemas import (
     EtatSante,
     ResultatBatch,
     ResultatPrediction,
+    champs_nullables,
 )
 from churn_saas.api.security import (
     LimiteCorpsMiddleware,
     verifier_cle_api,
     verifier_rate_limit,
 )
-from churn_saas.features.build import ajouter_features_metier
+from churn_saas.features.build import ajouter_features_metier, joindre_catalogue
+from churn_saas.features.enrichissement import enrichir_par_pays, enrichir_par_secteur
 
 _VERSION = "0.1.0"
 _MAX_BATCH = 1_000
+
+_CATALOGUE = pd.read_csv(config.DONNEES_BRUTES / "catalogue_plans.csv")
 
 
 @asynccontextmanager
@@ -43,6 +47,9 @@ app = FastAPI(
         "Prédit la probabilité de résiliation d'un compte SaaS B2B. "
         "Retourne la probabilité, la valeur à risque (€), la décision recommandée "
         "et les facteurs de risque identifiés. "
+        "Les champs porteurs de manquance dans le jeu d'entraînement acceptent `null` : "
+        "leur valeur est reconstruite par le pipeline et listée dans `champs_imputes`. "
+        "Aucune valeur par défaut n'est fabriquée — un champ obligatoire absent donne un 422. "
         "Authentification via l'en-tête **X-API-Key** (clé env `CHURN_API_KEY`)."
     ),
     version=_VERSION,
@@ -61,6 +68,14 @@ _PREDICTIONS_COUNTER = Counter(
     ["decision"],
 )
 
+# Suivi de la manquance amont : un taux qui grimpe sur un champ signale une rupture
+# d'intégration CRM bien avant que la dérive du score ne devienne visible (§13).
+_CHAMPS_IMPUTES_COUNTER = Counter(
+    "churn_champs_imputes_total",
+    "Nombre de demandes reçues avec un champ absent, par champ reconstruit",
+    ["champ"],
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers métier
@@ -68,12 +83,24 @@ _PREDICTIONS_COUNTER = Counter(
 
 
 def _demande_vers_dataframe(demandes: list[DemandePredicton]) -> pd.DataFrame:
-    """Convertit une liste de demandes en DataFrame enrichi par ajouter_features_metier."""
+    """Convertit une liste de demandes en DataFrame enrichi — même chaîne que le gold dataset."""
     donnees = [d.model_dump() for d in demandes]
     df = pd.DataFrame(donnees)
-    # Enrichissement des features dérivées — même logique que la construction gold
     df = ajouter_features_metier(df, csat_median_par_secteur=None)
+    df = joindre_catalogue(df, _CATALOGUE)
+    df = enrichir_par_secteur(df)
+    df = enrichir_par_pays(df)
     return df
+
+
+def _champs_imputes(demande: DemandePredicton) -> list[str]:
+    """Champs absents de la demande, dont la valeur sera reconstruite en aval.
+
+    Reconstruction : imputation médiane du `Pipeline` sklearn pour les champs numériques,
+    valeur de repli des enrichissements pour `secteur` et `pays`. Le score reste
+    exploitable, mais le consommateur doit savoir sur quoi il repose.
+    """
+    return sorted(nom for nom in champs_nullables() if getattr(demande, nom) is None)
 
 
 def _extraire_facteurs(demande: DemandePredicton) -> list[str]:
@@ -81,15 +108,18 @@ def _extraire_facteurs(demande: DemandePredicton) -> list[str]:
 
     Ces règles proviennent de l'EDA (§6) — jamais inventées a posteriori.
     Elles sont complémentaires aux SHAP values calculées en §11 (notebook).
+
+    Un champ absent ne déclenche aucun facteur : on ne transforme pas une donnée manquante
+    en signal de risque. Il apparaît dans `champs_imputes`, ce qui est l'information honnête.
     """
     facteurs: list[str] = []
     if demande.derniere_connexion_jours > 30:
         facteurs.append(f"inactivité élevée ({demande.derniere_connexion_jours} j sans connexion)")
     if demande.csat is not None and demande.csat <= 6:
         facteurs.append(f"satisfaction faible (CSAT = {demande.csat:.1f}/10)")
-    if demande.retards_paiement_12m > 0:
+    if demande.retards_paiement_12m is not None and demande.retards_paiement_12m > 0:
         facteurs.append(f"retards de paiement ({demande.retards_paiement_12m} sur 12 mois)")
-    if demande.taux_adoption_pct < 30:
+    if demande.taux_adoption_pct is not None and demande.taux_adoption_pct < 30:
         facteurs.append(f"adoption faible ({demande.taux_adoption_pct:.0f} %)")
     if demande.tickets_support_90j > 5:
         facteurs.append(f"volume élevé de tickets ({demande.tickets_support_90j} sur 90 jours)")
@@ -100,9 +130,26 @@ def _extraire_facteurs(demande: DemandePredicton) -> list[str]:
     return facteurs[:3] if facteurs else ["aucun signal négatif identifié"]
 
 
-def _valeur_a_risque(demande: DemandePredicton, probabilite: float) -> float:
-    horizon: int = int(config.HYPOTHESES_ECONOMIQUES.get("horizon_mois", 12))
-    return round(probabilite * demande.revenu_mensuel_recurrent_eur * horizon, 2)
+def _valeur_a_risque(
+    demande: DemandePredicton, probabilite: float
+) -> tuple[float | None, str | None]:
+    """Valeur à risque en €, ou (None, motif) si le MRR est absent de la demande.
+
+    Le calcul lui-même vit dans `churn_saas.economie` — autorité unique partagée avec le
+    flow de scoring batch et la §12.11 du notebook. Cette fonction ne porte que la
+    **politique de manquance de l'API** : le modèle sait scorer un compte sans MRR
+    (imputation médiane), mais le montant en € sert à prioriser les gestes de rétention et
+    à chiffrer le ROI. Le calculer sur un MRR imputé produirait un euro faux présenté comme
+    une mesure : on renvoie `null` et le motif, à charge du consommateur de compléter la
+    donnée.
+    """
+    if demande.revenu_mensuel_recurrent_eur is None:
+        return None, (
+            "MRR absent de la demande — montant non calculable ; le score de churn, lui, "
+            "reste valide (imputation médiane du pipeline)."
+        )
+    valeur = economie.valeur_a_risque(probabilite, demande.revenu_mensuel_recurrent_eur)
+    return round(float(valeur), 2), None
 
 
 def _decision(probabilite: float, seuil: float) -> Literal["ALERTE_ROUGE", "SURVEILLANCE", "OK"]:
@@ -118,12 +165,18 @@ def _construire_resultat(
     probabilite: float,
     seuil: float,
 ) -> ResultatPrediction:
+    valeur, motif = _valeur_a_risque(demande, probabilite)
+    imputes = _champs_imputes(demande)
+    for champ in imputes:
+        _CHAMPS_IMPUTES_COUNTER.labels(champ=champ).inc()
     return ResultatPrediction(
         probabilite_churn=round(probabilite, 4),
-        valeur_a_risque_eur=_valeur_a_risque(demande, probabilite),
+        valeur_a_risque_eur=valeur,
         decision=_decision(probabilite, seuil),
         facteurs_principaux=_extraire_facteurs(demande),
         seuil_applique=seuil,
+        champs_imputes=imputes,
+        motif_valeur_a_risque=motif,
     )
 
 
@@ -173,7 +226,11 @@ async def predict(
 ) -> ResultatPrediction:
     """Prédit la probabilité de churn pour **un** compte client.
 
-    - **422** : données d'entrée invalides (bornes, types).
+    Un compte incomplet est scoré si la manquance porte sur un champ nullable : les champs
+    reconstruits sont listés dans `champs_imputes`, et `valeur_a_risque_eur` passe à `null`
+    si le MRR fait partie des manquants.
+
+    - **422** : données d'entrée invalides (bornes, types) ou champ obligatoire absent.
     - **401** : clé d'API manquante ou incorrecte.
     - **429** : quota dépassé (60 req/min par IP).
     - **503** : modèle non disponible (exécuter `churn-saas train`).

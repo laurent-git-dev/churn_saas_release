@@ -145,6 +145,57 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18},
+      "id": 12,
+      "title": "Sortie du modèle et qualité des entrées (C8/C9)",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "description": "Dérive de la distribution de sortie — une hausse soutenue d'ALERTE_ROUGE sans dérive d'entrée détectée signale un changement de comportement client.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 19},
+      "id": 5,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}},
+      "title": "Prédictions par décision (req/s)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(churn_predictions_total{job=\"churn_saas_api\"}[5m])",
+          "legendFormat": "{{decision}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "description": "Champs absents des demandes reçues, reconstruits par le pipeline. Une rupture d'intégration CRM se voit ici avant toute dérive du score.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 19},
+      "id": 6,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}},
+      "title": "Champs manquants reçus (par heure)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(churn_champs_imputes_total{job=\"churn_saas_api\"}[1h]) * 3600",
+          "legendFormat": "{{champ}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

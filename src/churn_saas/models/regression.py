@@ -33,7 +33,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
-from churn_saas import cache, config, viz
+from churn_saas import cache, config, economie, viz
 from churn_saas.features.build import construire_preprocesseur
 
 # Colonnes non modélisables hors COLONNES_INTERDITES
@@ -392,60 +392,12 @@ def valeur_a_risque(
     mrr_mensuel: _NumType,
     horizon_mois: int | None = None,
 ) -> _NumType:
-    """Valeur future à risque en euros — formule correcte (point de vigilance n°3).
+    """Valeur future à risque en euros — délègue à `churn_saas.economie`.
 
-    Formule retenue :
+    La formule (``P(churn) × MRR × horizon × marge_brute``, point de vigilance n°3) vit
+    dans `churn_saas.economie`, module unique partagé par l'API, le flow de scoring batch
+    et le notebook. Cette fonction est conservée pour la §12.11, qui l'appelle via `reg.`.
 
-    .. code-block:: text
-
-        valeur_à_risque = P(churn) × MRR_mensuel × horizon_mois × marge_brute
-
-    ⚠️  Ne multiplie PAS P(churn) par ``valeur_vie_client_eur`` (CLV historique) —
-    ce serait compter deux fois le même euro. La CLV est historique (r > 0,70 en §6.7) ;
-    elle contient de la valeur passée déjà encaissée et irrecouvrable.
-
-    La valeur à risque représente la **valeur future espérée sur un horizon explicite**
-    (12 mois par défaut) qui serait perdue si le compte résilie.
-
-    Parameters
-    ----------
-    proba_churn :
-        Probabilité de churn prédite ∈ [0, 1] — scalaire ou ndarray.
-    mrr_mensuel :
-        Revenu mensuel récurrent en euros — scalaire ou ndarray.
-    horizon_mois :
-        Horizon en mois. Par défaut :
-        ``config.HYPOTHESES_ECONOMIQUES["horizon_mois"]`` (12 mois).
-
-    Returns
-    -------
-    Valeur à risque en euros, même type que les entrées (scalaire ou ndarray).
+    Voir :func:`churn_saas.economie.valeur_a_risque` pour la documentation complète.
     """
-    if horizon_mois is None:
-        horizon_mois = int(config.HYPOTHESES_ECONOMIQUES["horizon_mois"])
-    marge = float(config.HYPOTHESES_ECONOMIQUES["marge_brute_pct"])
-
-    valeur = proba_churn * mrr_mensuel * horizon_mois * marge
-
-    if isinstance(proba_churn, np.ndarray) or isinstance(mrr_mensuel, np.ndarray):
-        arr = np.asarray(valeur, dtype=float)
-        logger.debug(
-            "valeur_a_risque — médiane={:.0f} €  max={:.0f} €  (horizon={}m, marge={:.0%})",
-            float(np.median(arr)),
-            float(np.max(arr)),
-            horizon_mois,
-            marge,
-        )
-        return arr
-    else:
-        v = float(valeur)
-        logger.debug(
-            "valeur_a_risque — {:.0f} €  (P(churn)={:.2%}, MRR={:.0f} €, "
-            "horizon={}m, marge={:.0%})",
-            v,
-            float(proba_churn),
-            float(mrr_mensuel),
-            horizon_mois,
-            marge,
-        )
-        return v
+    return economie.valeur_a_risque(proba_churn, mrr_mensuel, horizon_mois=horizon_mois)
