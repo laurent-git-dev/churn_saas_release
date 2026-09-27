@@ -23,7 +23,7 @@ import pandas as pd
 from IPython.display import Markdown, display
 from loguru import logger
 
-from churn_saas import config
+from churn_saas import config, viz
 from churn_saas.cache import charger_ou_calculer
 from churn_saas.features.build import ajouter_features_metier
 from churn_saas.monitoring import (
@@ -537,6 +537,219 @@ display(Markdown(
 # et à l'indicateur d'obsolescence (§13.6), il forme un monitoring à trois niveaux :
 # dérive d'entrée (immédiate), dérive de sortie (immédiate), dégradation de performance
 # (décalée, après obtention des étiquettes — §13.7).
+
+# %% [markdown]
+# ### 13.9.1 — Simulation des données de monitoring (Grafana)
+#
+# Pour prouver le fonctionnement de la chaîne Prometheus → Grafana sans
+# nécessiter une stack live, on génère des métriques synthétiques réalistes
+# (intervalle 30 s, conforme au `scrape_interval` de `prometheus.yml`) couvrant
+# les 4 panels du dashboard `monitoring/grafana/dashboard.json`.
+
+# %%
+# Génération des séries temporelles synthétiques (2 h à 30 s d'intervalle)
+_rng = np.random.default_rng(config.RANDOM_SEED)
+_n = 240  # 240 × 30 s = 2 heures
+_debut = pd.Timestamp("2026-09-27 00:00:00")
+_ts = pd.date_range(start=_debut, periods=_n, freq="30s")
+
+# Statut API : 1 partout, sauf index [100, 122] → panne ~11 min (1 alerte valide)
+_up = np.ones(_n, dtype=int)
+_up[100:122] = 0
+
+# Débit : poisson(12 req/s) × statut (0 pendant la panne)
+_req = _rng.poisson(12, _n).astype(float) * _up
+
+# Latence p50 : base 75 ms + bruit ; spike gaussien à t=[80:100] → pic ~380 ms
+_base_p50 = 75.0 + _rng.normal(0, 5, _n)
+_spike = np.zeros(_n)
+_spike[80:100] = _rng.normal(220, 20, 20).clip(min=0)
+_p50 = (_base_p50 + _spike).clip(min=20)
+_p95 = (_p50 * 1.5 + _rng.normal(0, 8, _n)).clip(min=30)
+_p99 = (_p50 * 2.0 + _rng.normal(0, 12, _n)).clip(min=40)
+# Forcer à zéro pendant la panne (API muette)
+_p50[100:122] = 0
+_p95[100:122] = 0
+_p99[100:122] = 0
+
+# Taux d'erreur : ~0.5 % nominal, 100 % pendant la panne
+_erreurs = 0.5 + _rng.normal(0, 0.1, _n)
+_erreurs[100:122] = 100.0
+_erreurs = _erreurs.clip(min=0)
+
+# Compteurs cumulatifs par classe : dérive de ALERTE_ROUGE de 10 % → 16 %
+_taux_alerte = np.linspace(0.10, 0.16, _n)
+_taux_surv = np.full(_n, 0.30)
+_taux_ok = 1.0 - _taux_alerte - _taux_surv
+_pred_alerte = np.cumsum((_rng.poisson(12 * _taux_alerte)).astype(int) * _up)
+_pred_surv = np.cumsum((_rng.poisson(12 * _taux_surv)).astype(int) * _up)
+_pred_ok = np.cumsum((_rng.poisson(12 * _taux_ok)).astype(int) * _up)
+
+df_metriques = pd.DataFrame({
+    "ts": _ts,
+    "up": _up,
+    "req_par_s": _req,
+    "latence_p50": _p50,
+    "latence_p95": _p95,
+    "latence_p99": _p99,
+    "erreurs_4xx_5xx_pct": _erreurs,
+    "predictions_ok": _pred_ok,
+    "predictions_surveillance": _pred_surv,
+    "predictions_alerte_rouge": _pred_alerte,
+})
+df_metriques.head(3)
+
+# %%
+# Figure 1 — Disponibilité API et taux d'erreur (panels 1 et 4 du dashboard Grafana)
+fig, axes = viz.figure_grille(
+    "monitoring_statut_api",
+    "API — Disponibilité et taux d'erreur",
+    nlignes=1,
+    ncols=2,
+    taille=(14, 4.5),
+)
+ax_statut, ax_err = axes
+
+# Axe gauche : statut up/down
+ax_statut.fill_between(
+    df_metriques["ts"],
+    df_metriques["up"],
+    step="post",
+    color="#3BB273",
+    alpha=0.7,
+    label="UP",
+)
+_down_mask = df_metriques["up"] == 0
+if _down_mask.any():
+    ax_statut.fill_between(
+        df_metriques["ts"],
+        _down_mask.astype(int),
+        step="post",
+        color="#E84855",
+        alpha=0.7,
+        label="INDISPONIBLE",
+    )
+    _idx_panne = df_metriques.index[_down_mask][0]
+    ax_statut.annotate(
+        "↓ Panne (~11 min)\n→ alerte APIIndisponible",
+        xy=(df_metriques.loc[_idx_panne, "ts"], 0.05),
+        xytext=(df_metriques.loc[_idx_panne + 25, "ts"], 0.6),
+        arrowprops={"arrowstyle": "->", "color": "#E84855"},
+        fontsize=9,
+        color="#E84855",
+    )
+ax_statut.set_ylim(0, 1.2)
+ax_statut.set_yticks([0, 1])
+ax_statut.set_yticklabels(["INDISPONIBLE", "UP"])
+ax_statut.set_xlabel("Heure")
+ax_statut.set_ylabel("Statut")
+ax_statut.legend(loc="lower right", fontsize=9)
+
+# Axe droit : taux d'erreur
+ax_err.plot(
+    df_metriques["ts"],
+    df_metriques["erreurs_4xx_5xx_pct"],
+    color=viz.PALETTE_PRINCIPALE[1],
+    linewidth=1.2,
+    label="Taux erreur 4xx+5xx",
+)
+ax_err.axhline(1.0, linestyle="--", color="#264653", linewidth=1.0, label="SLO : taux erreur < 1 %")
+ax_err.set_ylim(bottom=0)
+ax_err.set_ylabel("Taux erreur (%)")
+ax_err.set_xlabel("Heure")
+ax_err.legend(fontsize=9)
+
+fig.tight_layout()
+viz.sauvegarder(fig)
+
+# %%
+# Figure 2 — Latence /predict p50/p95/p99 avec seuil SLO et zone d'alerte
+fig, ax = viz.figure(
+    "monitoring_latence_predict",
+    "Latence /predict — p50 / p95 / p99 (SLO 200 ms)",
+    taille=(12, 5),
+)
+
+for col, lbl, cidx in [
+    ("latence_p50", "p50", 0),
+    ("latence_p95", "p95", 3),
+    ("latence_p99", "p99", 1),
+]:
+    ax.plot(
+        df_metriques["ts"],
+        df_metriques[col],
+        label=lbl,
+        color=viz.PALETTE_PRINCIPALE[cidx],
+        linewidth=1.4,
+    )
+
+ax.axhline(200, linestyle="--", color="#E84855", linewidth=1.2, label="SLO 200 ms")
+
+# Zone pic latence + panne
+_t_debut_zone = df_metriques.loc[80, "ts"]
+_t_fin_zone = df_metriques.loc[121, "ts"]
+ax.axvspan(_t_debut_zone, _t_fin_zone, alpha=0.12, color="#E84855")
+ax.annotate(
+    "for:5m → alerte LatenceElevee",
+    xy=(_t_debut_zone, 210),
+    xytext=(_t_debut_zone, 320),
+    arrowprops={"arrowstyle": "->", "color": "#E84855"},
+    fontsize=9,
+    color="#E84855",
+)
+
+ax.set_ylabel("Latence (ms)")
+ax.set_xlabel("Heure")
+ax.legend(loc="upper left", fontsize=9)
+viz.sauvegarder(fig)
+
+# %%
+# Figure 3 — Répartition cumulée des prédictions par classe de risque
+fig, ax = viz.figure(
+    "monitoring_predictions_classes",
+    "Répartition des prédictions par classe de risque",
+    taille=(12, 5),
+)
+
+ax.stackplot(
+    df_metriques["ts"],
+    df_metriques["predictions_ok"],
+    df_metriques["predictions_surveillance"],
+    df_metriques["predictions_alerte_rouge"],
+    labels=["OK", "SURVEILLANCE", "ALERTE ROUGE"],
+    colors=[viz.COULEUR_NON_CHURN, viz.PALETTE_PRINCIPALE[3], viz.COULEUR_CHURN],
+    alpha=0.8,
+)
+
+# Annotation de la dérive en fin de fenêtre
+_idx_fin = _n - 1
+ax.annotate(
+    "Dérive sortie : ALERTE ROUGE +6 pp\n→ signal complémentaire au PSI (§13.3)",
+    xy=(df_metriques.loc[_idx_fin, "ts"], _pred_alerte[_idx_fin]),
+    xytext=(df_metriques.loc[_n - 60, "ts"], _pred_alerte[_n // 2]),
+    arrowprops={"arrowstyle": "->", "color": viz.COULEUR_CHURN},
+    fontsize=9,
+    color=viz.COULEUR_CHURN,
+)
+
+ax.set_ylabel("Prédictions cumulées")
+ax.set_xlabel("Heure")
+ax.legend(loc="upper left", fontsize=9)
+viz.sauvegarder(fig)
+
+# %% [markdown]
+# **Ce qu'il faut retenir.** La règle `for:5m` dans `alerts.yml` ajoute une
+# deuxième couche de filtrage après la fenêtre `rate(...[5m])` : un pic de latence
+# isolé de quelques secondes ne déclenche pas d'alerte, seul un dépassement soutenu
+# du SLO 200 ms sur 5 minutes consécutives le fait. À l'inverse, `APIIndisponible`
+# se déclenche en 1 minute car l'indisponibilité est immédiatement critique et doit
+# mobiliser l'astreinte sans délai. La dérive de la distribution de sortie — ici
+# +6 pp de prédictions `ALERTE_ROUGE` sur 2 heures — est un signal distinct et
+# complémentaire au PSI sur les entrées (§13.3) : une dérive de sortie peut apparaître
+# sans dérive d'entrée détectable (changement de comportement client sans changement
+# de données). Ces trois panels sont le miroir exact de ceux de
+# `monitoring/grafana/dashboard.json` (mêmes métriques, mêmes seuils SLO),
+# importable directement dans Grafana via UI Import ou l'API de provisionnement.
 
 # %% [markdown]
 # ---
