@@ -4,6 +4,8 @@
 # **Certification CISIA** — Concevoir et implémenter une solution d'intelligence artificielle
 #
 # Livrable d'examen : notebook Jupyter exécutable, lisible sans explication orale.
+#
+# Code source public : <https://github.com/laurent-git-dev/churn_saas_release>
 
 # %%
 import datetime
@@ -44,6 +46,7 @@ champs_df = pd.DataFrame(
             "Date de remise",
             "Version du notebook",
             "Environnement d'exécution",
+            "Code source public",
         ],
         "Valeur": [
             "Détection de résiliation client SaaS B2B",
@@ -53,6 +56,7 @@ champs_df = pd.DataFrame(
             f"1.0.0 (commit {git_hash})",
             f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
             f" · {sys.platform}",
+            "https://github.com/laurent-git-dev/churn_saas_release",
         ],
     }
 )
