@@ -1,4 +1,4 @@
-.PHONY: setup notebook notebook-full test lint check api drift flow
+.PHONY: setup notebook notebook-full test lint check api drift flow sync-public
 
 setup:
 	uv sync --all-extras
@@ -27,3 +27,6 @@ drift:
 
 flow:
 	uv run python flows/retrain_flow.py
+
+sync-public:  ## Publie une version filtrée vers le dépôt public GitHub
+	@bash scripts/sync_public.sh
