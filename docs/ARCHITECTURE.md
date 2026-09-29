@@ -119,7 +119,7 @@ sequenceDiagram
     GW->>API: Requête transmise
 
     API->>REG: Charger modèle champion (cache local 1 h)
-    REG-->>API: Modèle XGBoost v2.3 (Production)
+    REG-->>API: Pipeline régression logistique — champion §9 (Production)
 
     API->>API: Inférence\n→ score_churn = 0.78\n→ décile = 9
 

@@ -37,9 +37,9 @@ def protocole_validation() -> RepeatedStratifiedKFold:
 
     Un seul objet garantit que chaque modèle voit exactement les mêmes plis
     (train/val identiques), condition nécessaire pour que la comparaison soit honnête.
-    Paramètres : 5 plis × 3 répétitions = 15 scores par métrique, suffisants pour
-    un IC robuste sur ~5 000 observations.  Seed = config.RANDOM_SEED (unique dans
-    tout le projet).
+    Paramètres : 5 plis × 3 répétitions = 15 scores par métrique, conservés pli par
+    pli pour le test de Wilcoxon apparié de ``comparer_au_champion()``.
+    Seed = config.RANDOM_SEED (unique dans tout le projet).
     """
     return RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=config.RANDOM_SEED)
 
@@ -84,7 +84,9 @@ def evaluer_modele(
     """Évalue `modele` par validation croisée stratifiée répétée.
 
     Retourne un dict de métriques (PR-AUC, ROC-AUC, recall, précision, Brier score,
-    latence unitaire médiane en ms) avec moyenne et écart-type sur les plis.
+    latence unitaire médiane en ms) avec moyenne et écart-type sur les plis, plus la
+    PR-AUC de chaque pli (`pr_auc_pli_00` … `pr_auc_pli_14`), nécessaire au test apparié
+    de ``comparer_au_champion()``.
 
     Seules les transformations apprises (fit) se font sur le fold d'entraînement ;
     la métrique est calculée sur le fold de validation — pas de fuite.
@@ -126,6 +128,10 @@ def evaluer_modele(
         arr = np.array(vals)
         return {f"{nom}_mean": float(arr.mean()), f"{nom}_std": float(arr.std())}
 
+    # Scores bruts par pli : l'ordre des plis est celui de `cv.split`, identique pour tous
+    # les modèles puisque l'objet CV est partagé — c'est ce qui rend le test apparié valide.
+    scores_par_pli = {f"{PREFIXE_PLI}{i:02d}": float(v) for i, v in enumerate(pr_aucs)}
+
     return (
         _stats(pr_aucs, "pr_auc")
         | _stats(roc_aucs, "roc_auc")
@@ -133,7 +139,94 @@ def evaluer_modele(
         | _stats(precisions, "precision")
         | _stats(briers, "brier")
         | _stats(latences, "latence_ms")
+        | scores_par_pli
     )
+
+
+# ---------------------------------------------------------------------------
+# Test de supériorité du champion — Wilcoxon apparié + correction de Holm (§8.8)
+# ---------------------------------------------------------------------------
+
+PREFIXE_PLI = "pr_auc_pli_"
+ALPHA_SIGNIFICATIVITE = 0.05
+
+
+def correction_holm(p_valeurs: list[float]) -> list[float]:
+    """Correction de Holm (step-down) : p-valeurs ajustées, risque global ≤ α.
+
+    La k-ième plus petite p-valeur (k = 0…m-1) est multipliée par (m − k), puis on impose
+    la monotonie (une p-valeur ajustée ne peut pas être inférieure à la précédente).
+    """
+    m = len(p_valeurs)
+    ordre = np.argsort(p_valeurs)
+    ajustees = np.empty(m)
+    maximum_courant = 0.0
+    for rang, idx in enumerate(ordre):
+        maximum_courant = max(maximum_courant, (m - rang) * p_valeurs[idx])
+        ajustees[idx] = min(1.0, maximum_courant)
+    return [float(p) for p in ajustees]
+
+
+def comparer_au_champion(
+    tableau: pd.DataFrame,
+    champion: str,
+    alpha: float = ALPHA_SIGNIFICATIVITE,
+) -> pd.DataFrame:
+    """Compare `champion` à chaque autre modèle du tableau, pli par pli.
+
+    Test de Wilcoxon apparié unilatéral (H1 : le champion a une PR-AUC plus élevée) sur
+    les 15 PR-AUC par pli, puis correction de Holm sur l'ensemble des comparaisons.
+
+    Parameters
+    ----------
+    tableau : pd.DataFrame
+        Sortie de ``comparer_modeles()`` (une ligne par modèle, colonnes ``pr_auc_pli_*``).
+    champion : str
+        Nom du modèle champion (index du tableau).
+    alpha : float
+        Risque global d'erreur de première espèce.
+
+    Returns
+    -------
+    pd.DataFrame indexé par concurrent : écart moyen de PR-AUC, nombre de plis gagnés,
+    p-valeur brute, p-valeur ajustée (Holm) et verdict de significativité.
+    """
+    from scipy.stats import wilcoxon
+
+    colonnes_plis = sorted(c for c in tableau.columns if c.startswith(PREFIXE_PLI))
+    if not colonnes_plis:
+        raise ValueError(
+            "Scores par pli absents du tableau : recalculer la comparaison (make notebook-full)."
+        )
+
+    scores_champion = tableau.loc[champion, colonnes_plis].to_numpy(dtype=float)
+    lignes = []
+    for concurrent in tableau.index.drop(champion):
+        ecarts = scores_champion - tableau.loc[concurrent, colonnes_plis].to_numpy(dtype=float)
+        # Écarts tous nuls : aucune différence à tester, p = 1 par convention
+        p_brute = (
+            1.0 if np.allclose(ecarts, 0.0) else float(wilcoxon(ecarts, alternative="greater")[1])
+        )
+        lignes.append(
+            {
+                "concurrent": concurrent,
+                "ecart_pr_auc_moyen": float(ecarts.mean()),
+                "plis_gagnes": f"{int((ecarts > 0).sum())}/{len(ecarts)}",
+                "p_valeur_brute": p_brute,
+            }
+        )
+
+    resultat = pd.DataFrame(lignes).set_index("concurrent")
+    resultat["p_valeur_holm"] = correction_holm(resultat["p_valeur_brute"].tolist())
+    resultat["significatif"] = resultat["p_valeur_holm"] < alpha
+    logger.info(
+        "Wilcoxon + Holm : {} significativement battu(s) par '{}' sur {} (α = {})",
+        int(resultat["significatif"].sum()),
+        champion,
+        len(resultat),
+        alpha,
+    )
+    return resultat
 
 
 # ---------------------------------------------------------------------------

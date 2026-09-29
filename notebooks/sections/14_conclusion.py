@@ -66,7 +66,9 @@ _cout_mensuel_cs = (
     * config.HYPOTHESES_ECONOMIQUES["cout_horaire_csm_eur"]
     * config.HYPOTHESES_ECONOMIQUES["duree_geste_retention_h"]
 )
-_roi = _mrr_sauve / _cout_mensuel_cs if _cout_mensuel_cs > 0 else 0.0
+# ROI par cohorte (définition de §12.12) : les gestes d'un mois retiennent des contrats qui
+# rapportent sur tout l'horizon, d'où la comparaison de _gain_annuel au coût du mois.
+_roi = (_gain_annuel - _cout_mensuel_cs) / _cout_mensuel_cs if _cout_mensuel_cs > 0 else 0.0
 mat = matrice_couts()
 
 # %% [markdown]
@@ -96,7 +98,9 @@ du chargement des données brutes au déploiement API avec monitoring.
 
 - Précision@{_cap} = **{precision_cap:.1%}** : {_n_churners} churners réels dans le top-{_cap}.
 - MRR churners couverts : **{_mrr_couvert:,.0f} €/mois**.
-- **Gain net espéré : {_gain_annuel:,.0f} €/an** — ROI = {_roi:.1f}× par euro investi en CS.
+- **Les gestes d'un mois coûtent {_cout_mensuel_cs:,.0f} € et sauvent une marge espérée de
+  {_gain_annuel:,.0f} €** sur {config.HYPOTHESES_ECONOMIQUES['horizon_mois']} mois —
+  ROI de la cohorte mensuelle = {_roi:.1f}× (gain net par euro investi en CS).
 - Latence API p95 < {config.CIBLES_PERFORMANCE["latence_unitaire_ms"]} ms,
   batch 5 000 comptes < {config.CIBLES_PERFORMANCE["latence_batch_5k_s"]} s.
 
@@ -159,7 +163,7 @@ display(
 1. **Valider les hypothèses économiques.** Le taux de succès rétention ({config.HYPOTHESES_ECONOMIQUES['taux_succes_retention']:.0%})
    et la durée d'un geste ({config.HYPOTHESES_ECONOMIQUES['duree_geste_retention_h']:.0f} h)
    sont des estimations. Mesurer ces deux paramètres sur 3 mois de données réelles
-   avant de consolider le ROI annoncé ({_gain_annuel:,.0f} €/an).
+   avant de consolider le ROI annoncé ({_roi:.1f}× par cohorte mensuelle de gestes).
 
 2. **Déployer le pipeline batch nocturne** (`make flow`, Prefect) comme premier cas d'usage.
    Le scoring hebdomadaire des {len(y):,} comptes alimente le CRM sans interruption de service.
@@ -235,8 +239,10 @@ seulement *si*. Ce modèle répond à une question différente et permet de prio
 display(
     Markdown(
         f"**Ce qu'il faut retenir.**  "
-        f"La solution livre une PR-AUC de **{pr_auc_oof:.4f}** (OOF), un gain net annuel estimé à "
-        f"**{_gain_annuel:,.0f} €** et un ROI de **{_roi:.1f}×**.  "
+        f"La solution livre une PR-AUC de **{pr_auc_oof:.4f}** (OOF), une marge espérée de "
+        f"**{_gain_annuel:,.0f} €** sauvée par chaque cohorte mensuelle de gestes CS "
+        f"(sur {config.HYPOTHESES_ECONOMIQUES['horizon_mois']} mois) et un ROI de cohorte de "
+        f"**{_roi:.1f}×**.  "
         f"Ces résultats sont défendables : les chiffres sont produits par du code visible, "
         f"les hypothèses sont documentées et révisables, et les limites sont énoncées sans "
         f"les minimiser.  "

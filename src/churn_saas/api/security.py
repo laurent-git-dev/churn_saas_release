@@ -79,7 +79,7 @@ class LimiteCorpsMiddleware(BaseHTTPMiddleware):
         longueur = request.headers.get("content-length")
         if longueur and int(longueur) > max_octets:
             return JSONResponse(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 content={"detail": f"Corps trop volumineux — maximum {max_octets // 1024} Kio."},
             )
         return await call_next(request)

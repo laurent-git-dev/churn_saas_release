@@ -136,7 +136,9 @@ dvc checkout data/gold/gold_dataset.parquet.dvc
 
 ### 4.3 Déclencheurs de rollback
 
-- Augmentation soudaine du taux `ALERTE_ROUGE` > 30 % (normal : ~15-20 %)
+- Taux `ALERTE_ROUGE` qui s'écarte de plus de 10 points du taux de référence (≈ 30 %, soit
+  1 508 / 5 000 au batch du 29/09/2026 — voir `reports/tables/scores_batch_*_synthese.json`),
+  dans un sens ou dans l'autre
 - Latence API > 500 ms en P95 (alerte Prometheus déjà déclenchée)
 - Retours terrain négatifs de l'équipe CS dans les 48h suivant une promotion
 - PR-AUC sur nouvelle cohorte de renouvellements < seuil a priori

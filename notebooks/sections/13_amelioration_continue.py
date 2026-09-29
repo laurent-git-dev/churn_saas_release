@@ -600,9 +600,13 @@ _erreurs = 0.5 + _rng.normal(0, 0.1, _n)
 _erreurs[100:122] = 100.0
 _erreurs = _erreurs.clip(min=0)
 
-# Compteurs cumulatifs par classe : dérive de ALERTE_ROUGE de 10 % → 16 %
-_taux_alerte = np.linspace(0.10, 0.16, _n)
-_taux_surv = np.full(_n, 0.30)
+# Compteurs cumulatifs par classe. Point de départ = répartition du batch réel
+# (reports/tables/scores_batch_*_synthese.json : ~30 % ALERTE_ROUGE, ~14 % SURVEILLANCE),
+# puis dérive de ALERTE_ROUGE au-delà de la tolérance de ±10 points du runbook (§4.3).
+_TAUX_ALERTE_REF, _TAUX_ALERTE_FIN = 0.30, 0.42
+_TOLERANCE_RUNBOOK_PP = 10
+_taux_alerte = np.linspace(_TAUX_ALERTE_REF, _TAUX_ALERTE_FIN, _n)
+_taux_surv = np.full(_n, 0.14)
 _taux_ok = 1.0 - _taux_alerte - _taux_surv
 _pred_alerte = np.cumsum((_rng.poisson(12 * _taux_alerte)).astype(int) * _up)
 _pred_surv = np.cumsum((_rng.poisson(12 * _taux_surv)).astype(int) * _up)
@@ -761,10 +765,15 @@ ax.stackplot(
 
 # Annotation de la dérive en fin de fenêtre
 _idx_fin = _n - 1
+_derive_pp = round((_TAUX_ALERTE_FIN - _TAUX_ALERTE_REF) * 100)
+# Aires empilées : le haut de la bande ALERTE ROUGE est le total cumulé des trois classes
+_sommet_pile = _pred_ok[_idx_fin] + _pred_surv[_idx_fin] + _pred_alerte[_idx_fin]
 ax.annotate(
-    "Dérive sortie : ALERTE ROUGE +6 pp\n→ signal complémentaire au PSI (§13.3)",
-    xy=(df_metriques.loc[_idx_fin, "ts"], _pred_alerte[_idx_fin]),
-    xytext=(df_metriques.loc[_n - 60, "ts"], _pred_alerte[_n // 2]),
+    f"Dérive sortie : ALERTE ROUGE {_TAUX_ALERTE_REF:.0%} → {_TAUX_ALERTE_FIN:.0%}\n"
+    f"(+{_derive_pp} pp > tolérance ±{_TOLERANCE_RUNBOOK_PP} pp du runbook)\n"
+    "→ déclencheur de rollback, complémentaire au PSI (§13.3)",
+    xy=(df_metriques.loc[_idx_fin, "ts"], _sommet_pile),
+    xytext=(df_metriques.loc[_n // 5, "ts"], _sommet_pile * 0.80),
     arrowprops={"arrowstyle": "->", "color": viz.COULEUR_CHURN},
     fontsize=9,
     color=viz.COULEUR_CHURN,
@@ -821,8 +830,10 @@ viz.sauvegarder(fig)
 # isolé de quelques secondes ne déclenche pas d'alerte, seul un dépassement soutenu
 # du SLO 200 ms sur 5 minutes consécutives le fait. À l'inverse, `APIIndisponible`
 # se déclenche en 1 minute car l'indisponibilité est immédiatement critique et doit
-# mobiliser l'astreinte sans délai. La dérive de la distribution de sortie — ici
-# +6 pp de prédictions `ALERTE_ROUGE` sur 2 heures — est un signal distinct et
+# mobiliser l'astreinte sans délai. La dérive de la distribution de sortie — ici le taux de
+# prédictions `ALERTE_ROUGE` simulé passe de 30 % (niveau du batch réel) à 42 % en 2 heures,
+# soit +12 points — dépasse la tolérance de ±10 points fixée comme déclencheur de rollback
+# dans `docs/RUNBOOK.md` (§4.3). C'est un signal distinct et
 # complémentaire au PSI sur les entrées (§13.3) : une dérive de sortie peut apparaître
 # sans dérive d'entrée détectable (changement de comportement client sans changement
 # de données). La quatrième figure illustre le signal le plus précoce de la chaîne : la

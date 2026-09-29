@@ -64,7 +64,7 @@
 | **Source** | `data/raw/churn_saas_complet.csv` — données fournies par l'éditeur SaaS |
 | **Volume** | ~5 000 lignes, 29 colonnes brutes → ~42 features après engineering |
 | **Période** | Non communiquée dans l'énoncé — supposée < 3 ans |
-| **Taux de churn** | ~15-20 % (déséquilibre de classes) |
+| **Taux de churn** | ~28 % (1 400 churners sur 5 000 clients uniques, mesuré en §6) — déséquilibre de classes ; plancher PR-AUC d'un modèle aléatoire ≈ 0.28 |
 | **Split** | 80 % entraînement / 20 % test (stratifié, seed unique) |
 | **Validation** | CV 5 × 3 répétitions sur le train (RepeatedStratifiedKFold) |
 | **Anti-fuite** | `config.COLONNES_INTERDITES` exclu ; toute transformation apprise dans les plis |

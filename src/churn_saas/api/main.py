@@ -323,12 +323,12 @@ async def predict_batch(
         )
     if not demandes:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="La liste de demandes ne peut pas être vide.",
         )
     if len(demandes) > _MAX_BATCH:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Lot trop grand : {_MAX_BATCH} comptes maximum par requête.",
         )
 

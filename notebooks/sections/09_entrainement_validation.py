@@ -17,6 +17,9 @@ from churn_saas import config
 from churn_saas.cache import charger_ou_calculer
 from churn_saas.features.build import ajouter_features_metier
 from churn_saas.models.train import (
+    ALPHA_SIGNIFICATIVITE,
+    PREFIXE_PLI,
+    comparer_au_champion,
     comparer_desequilibre,
     comparer_modeles,
     construire_modeles,
@@ -82,7 +85,8 @@ display(
 # | Gradient boosting | Ensembles d'arbres | Performance état de l'art pour données tabulaires |
 #
 # **Protocole unique** (objet `RepeatedStratifiedKFold` partagé) :
-# 5 plis × 3 répétitions = 15 scores par métrique → IC robuste même avec ~5 000 observations.
+# 5 plis × 3 répétitions = 15 scores par métrique, conservés pli par pli : ils donnent la
+# dispersion (écart-type) de chaque score et alimentent le test de Wilcoxon apparié de §9.3.1.
 # Toutes les transformations apprises (imputation, encodage, standardisation) sont fittées
 # **à l'intérieur** de chaque pli — jamais sur le jeu complet.
 #
@@ -118,6 +122,11 @@ tableau_modeles, _date_comp = charger_ou_calculer(
     "comparaison_modeles.parquet",
     _calcul_comparaison,
 )
+# Un cache antérieur à l'ajout des scores par pli ne permet pas le test apparié de §9.3.1
+if not any(c.startswith(PREFIXE_PLI) for c in tableau_modeles.columns):
+    tableau_modeles, _date_comp = charger_ou_calculer(
+        "comparaison_modeles.parquet", _calcul_comparaison, forcer=True
+    )
 
 # Colonnes d'affichage
 _cols_affichage = [
@@ -145,18 +154,57 @@ display(_affichage.style.format(precision=4).background_gradient(
 # **Ce qu'il faut retenir.**
 # Le tableau ci-dessus est la pièce centrale de la démonstration de valeur :
 #
-# - **PR-AUC** : métrique principale pour un problème déséquilibré (~20 % de churn).
-#   Un modèle aléatoire donne PR-AUC ≈ prévalence ≈ 0,20 ; la cible fixée a priori est
-#   `config.CIBLES_PERFORMANCE["pr_auc_min"]` = **{config.CIBLES_PERFORMANCE["pr_auc_min"]:.2f}**.
+# - **PR-AUC** : métrique principale pour un problème déséquilibré (~28 % de churn, §6).
+#   Un modèle aléatoire donne PR-AUC ≈ prévalence ≈ 0,28 ; la cible fixée a priori est
+#   `config.CIBLES_PERFORMANCE["pr_auc_min"]` = **0,65** (§8.2).
 # - **Gain vs règle métier (B1)** : la différence de PR-AUC entre le meilleur modèle ML et B1
 #   quantifie l'apport réel du machine learning sur deux règles SQL.  Si ce gain est marginal,
 #   la recommandation serait de déployer B1 (moins coûteux, plus explicable, plus robuste au drift).
-# - **Famille arbres vs linéaire** : le gradient boosting surpasse généralement la régression
-#   logistique sur des données tabulaires hétérogènes, mais au prix d'une latence et d'une
-#   consommation énergétique plus élevées.  La comparaison PR-AUC vs latence est documentée ici.
+# - **Famille arbres vs linéaire** : §8.6 traitait la supériorité des arbres sur données
+#   tabulaires comme une hypothèse à vérifier ; le constat chiffré suit.
 
 # %%
-# Figure — PR-AUC avec IC
+_ARBRES = ["Forêt aléatoire", "Gradient boosting"]
+_LINEAIRE = "B2 — Régression logistique"
+_arbres_presents = [n for n in _ARBRES if n in tableau_modeles.index]
+_meilleur_arbre = tableau_modeles.loc[_arbres_presents, "pr_auc_mean"].idxmax()
+_pr_lin = float(tableau_modeles.loc[_LINEAIRE, "pr_auc_mean"])
+_pr_arbre = float(tableau_modeles.loc[_meilleur_arbre, "pr_auc_mean"])
+_ratio_latence = float(
+    tableau_modeles.loc[_meilleur_arbre, "latence_ms_mean"]
+    / tableau_modeles.loc[_LINEAIRE, "latence_ms_mean"]
+)
+_ratio_duree = float(
+    tableau_modeles.loc[_meilleur_arbre, "duree_eval_s"]
+    / tableau_modeles.loc[_LINEAIRE, "duree_eval_s"]
+)
+
+if _pr_lin >= _pr_arbre:
+    _constat = (
+        f"**L'hypothèse de §8.6 n'est pas confirmée : la régression logistique devance le meilleur "
+        f"ensemble d'arbres** (`{_meilleur_arbre}`) de **{_pr_lin - _pr_arbre:+.3f}** point de "
+        f"PR-AUC ({_pr_lin:.3f} contre {_pr_arbre:.3f}), tout en étant {_ratio_latence:.1f}× plus "
+        f"rapide à l'inférence et {_ratio_duree:.1f}× plus rapide à entraîner. "
+        "Explication plausible : sur ~5 000 lignes, les variables métier construites en §7 "
+        "(ratios d'adoption, indicateurs d'inactivité) rendent la relation avec le churn largement "
+        "monotone ; les arbres n'ont pas assez de données pour tirer parti d'interactions "
+        "supplémentaires et paient leur variance. C'est le cas de figure prévu par l'engagement "
+        "d'éco-conception de §8.4 : le modèle le plus simple, le plus explicable et le moins "
+        "coûteux est aussi le plus performant. La significativité de l'écart est testée en §9.3.1."
+    )
+else:
+    _constat = (
+        f"Le meilleur ensemble d'arbres (`{_meilleur_arbre}`) devance la régression logistique de "
+        f"**{_pr_arbre - _pr_lin:+.3f}** point de PR-AUC ({_pr_arbre:.3f} contre {_pr_lin:.3f}), "
+        f"pour une latence d'inférence {_ratio_latence:.1f}× plus élevée et un entraînement "
+        f"{_ratio_duree:.1f}× plus long. Selon l'engagement de §8.4, ce gain ne justifie le "
+        "surcoût que s'il est significatif (§9.3.1) et supérieur à 0,02."
+    )
+
+display(Markdown(f"**Famille arbres vs linéaire — constat.** {_constat}"))
+
+# %%
+# Figure — PR-AUC moyenne ± écart-type entre plis
 fig, ax = figure("pr_auc_modeles", "PR-AUC par modèle (validation croisée)", taille=(10, 5))
 
 noms = list(tableau_modeles.index)
@@ -188,6 +236,115 @@ sauvegarder(fig)
 # La ligne grise représente la PR-AUC d'un prédicteur aléatoire (= prévalence de la classe positive).
 # Tout modèle sous la ligne grise est inutile ; tout modèle sous la ligne rouge n'est pas
 # déployable selon nos critères métier.
+
+# %% [markdown]
+# #### 9.3.1 L'écart est-il significatif ? — Wilcoxon apparié et correction de Holm
+#
+# Une moyenne plus élevée ne suffit pas : l'écart entre deux modèles peut relever du hasard du
+# découpage. On applique donc le protocole fixé **avant** les résultats en §8.8 :
+#
+# 1. **Rejet** des modèles dont la PR-AUC moyenne est sous le seuil a priori (0,65) ;
+# 2. **Champion provisoire** : la PR-AUC moyenne la plus élevée parmi les modèles restants ;
+# 3. **Test de Wilcoxon apparié** (unilatéral) du champion contre chaque autre modèle, sur les
+#    15 PR-AUC calculées **sur les mêmes plis** ;
+# 4. **Correction de Holm** des p-valeurs, pour un risque global d'erreur α = 0,05 sur
+#    l'ensemble des comparaisons ;
+# 5. **Parcimonie** : si un modèle non rejeté et **plus simple** n'est pas significativement
+#    battu, c'est lui qui est retenu (engagement d'éco-conception, §8.4).
+#
+# Ordre de simplicité retenu : baselines (B0, B1) < régression logistique (B2) < ensembles
+# d'arbres (forêt aléatoire, gradient boosting — même niveau, départagés par la PR-AUC).
+
+# %%
+_ORDRE_SIMPLICITE = {
+    "B0 — Hasard stratifié": 0,
+    "B1 — Règle métier": 1,
+    "B2 — Régression logistique": 2,
+    "Forêt aléatoire": 3,
+    "Gradient boosting": 3,
+}
+_seuil_rejet = config.CIBLES_PERFORMANCE["pr_auc_min"]
+_non_rejetes = tableau_modeles.index[tableau_modeles["pr_auc_mean"] >= _seuil_rejet].tolist()
+
+# Si aucun modèle n'atteint le seuil, on teste quand même le meilleur, mais aucun n'est déployable
+champion_provisoire = _non_rejetes[0] if _non_rejetes else tableau_modeles.index[0]
+tests_superiorite = comparer_au_champion(tableau_modeles, champion_provisoire)
+
+# Parcimonie : candidats = champion + modèles non rejetés qu'il ne bat pas significativement
+_non_departages = [
+    n
+    for n in _non_rejetes
+    if n != champion_provisoire and not tests_superiorite.loc[n, "significatif"]
+]
+modele_retenu = min(
+    [champion_provisoire, *_non_departages],
+    key=lambda n: (_ORDRE_SIMPLICITE.get(n, 99), -tableau_modeles.loc[n, "pr_auc_mean"]),
+)
+
+_affichage_tests = tests_superiorite.assign(
+    significatif=tests_superiorite["significatif"].map({True: "Oui", False: "Non"})
+).rename(
+    columns={
+        "ecart_pr_auc_moyen": "Écart PR-AUC moyen",
+        "plis_gagnes": "Plis gagnés par le champion",
+        "p_valeur_brute": "p-valeur brute",
+        "p_valeur_holm": "p-valeur ajustée (Holm)",
+        "significatif": f"Significatif (α = {ALPHA_SIGNIFICATIVITE})",
+    }
+)
+_affichage_tests.index.name = f"Champion « {champion_provisoire} » contre…"
+display(
+    _affichage_tests.style.format(
+        {
+            "Écart PR-AUC moyen": "{:+.4f}",
+            "p-valeur brute": "{:.2e}",
+            "p-valeur ajustée (Holm)": "{:.2e}",
+        }
+    )
+)
+
+# %%
+_n_battus = int(tests_superiorite["significatif"].sum())
+_n_tests = len(tests_superiorite)
+_p_max_holm = float(tests_superiorite["p_valeur_holm"].max())
+_n_plis = sum(c.startswith(PREFIXE_PLI) for c in tableau_modeles.columns)
+_verdict_rejet = (
+    f"{len(_non_rejetes)} modèle(s) sur {len(tableau_modeles)} atteignent le seuil a priori de "
+    f"PR-AUC ≥ {_seuil_rejet:.2f}."
+    if _non_rejetes
+    else f"**Aucun modèle n'atteint le seuil a priori de PR-AUC ≥ {_seuil_rejet:.2f} : "
+    "aucun n'est déployable en l'état.**"
+)
+if modele_retenu != champion_provisoire:
+    _verdict_parcimonie = (
+        f"`{champion_provisoire}` a la meilleure moyenne, mais son avance sur `{modele_retenu}` "
+        f"n'est pas significative : par parcimonie, **`{modele_retenu}` (plus simple) est "
+        "retenu**."
+    )
+elif _non_departages:
+    _verdict_parcimonie = (
+        f"Certains concurrents ne sont pas significativement battus, mais aucun n'est plus "
+        f"simple : **`{modele_retenu}` est retenu**."
+    )
+else:
+    _verdict_parcimonie = (
+        f"Aucun concurrent ne résiste au test : **`{modele_retenu}` est retenu** sans recours "
+        "à la règle de parcimonie."
+    )
+display(
+    Markdown(
+        f"**Ce qu'il faut retenir.** {_verdict_rejet} "
+        f"Le champion provisoire `{champion_provisoire}` bat significativement "
+        f"**{_n_battus} concurrent(s) sur {_n_tests}** après correction de Holm "
+        f"(p-valeur ajustée maximale : {_p_max_holm:.1e}). {_verdict_parcimonie} "
+        "Le test porte sur des plis appariés : chaque écart est mesuré sur exactement les mêmes "
+        "données, ce qui neutralise la difficulté propre à chaque découpage. "
+        f"Avec {_n_plis} plis, la plus petite p-valeur atteignable est "
+        f"1/2^{_n_plis} ≈ {0.5**_n_plis:.1e} (champion meilleur sur tous les plis). "
+        "Limite rappelée en §8.8 : les plis d'une validation croisée répétée partagent des "
+        "données, donc le test est un garde-fou plutôt qu'une preuve absolue."
+    )
+)
 
 # %% [markdown]
 # ### 9.4 Gain réel sur la règle métier
@@ -257,8 +414,11 @@ _params_communs = {
 
 _run_ids = {}
 for _nom in tableau_modeles.index:
+    # Scores par pli exclus : MLflow reçoit les agrégats, le détail reste dans le cache parquet
     _metriques_modele = {
-        k: v for k, v in tableau_modeles.loc[_nom].items() if isinstance(v, float)
+        k: v
+        for k, v in tableau_modeles.loc[_nom].items()
+        if isinstance(v, float) and not k.startswith(PREFIXE_PLI)
     }
     _params_modele = {**_params_communs, "modele": _nom}
     _modele_obj = modeles.get(_nom)
@@ -377,14 +537,17 @@ sauvegarder(fig)
 # %%
 from churn_saas.models.train import construire_modele_optimise, mesurer_latence, optimiser
 
-nom_champion = tableau_modeles.index[0]
+# Champion = modèle retenu par le protocole §8.8 (Wilcoxon + Holm + parcimonie, §9.3.1)
+nom_champion = modele_retenu
 
-# Sélection du modèle à optimiser : meilleur non-baseline.
-# Les baselines (B0, B1) n'ont pas de vrai espace de recherche.
+# Sélection du modèle à optimiser : le champion, sauf s'il s'agit d'une baseline (B0, B1),
+# qui n'a pas de vrai espace de recherche — on prend alors le meilleur modèle ML.
 # B2 (régression logistique) est un modèle ML à part entière — inclus.
-# On préfère optimiser un modèle arbre ou logistique, pas un hasard stratifié.
 _noms_ml = [n for n in tableau_modeles.index if not n.startswith("B0") and not n.startswith("B1")]
-nom_a_optimiser = _noms_ml[0] if _noms_ml else nom_champion
+if nom_champion in _noms_ml:
+    nom_a_optimiser = nom_champion
+else:
+    nom_a_optimiser = _noms_ml[0] if _noms_ml else nom_champion
 
 safe_optimiser = (
     nom_a_optimiser.lower()
@@ -652,7 +815,7 @@ display(
 
 | Poste | Mesure retenue | Justification |
 |---|---|---|
-| Fréquence de scoring | Hebdomadaire (batch, nuit) | Évite un scoring continu sur des comptes stables — signal churn peu volatile |
+| Fréquence de scoring | Quotidienne (batch, nuit) | Calée sur le rafraîchissement des sources (1×/jour) — un scoring continu ne verrait rien de neuf sur un signal churn peu volatile |
 | Taille du batch | ≤ {config.CIBLES_PERFORMANCE["latence_batch_5k_s"]:.0f} s pour 5 000 comptes | Contrainte matérielle : fenêtre de maintenance disponible |
 | Réentraînement | Trimestriel ou sur dérive détectée | Évite les réentraînements superflus — décision pilotée par Evidently (§13) |
 | Inférence unitaire | API synchrone à la demande CSM | Pas de prédiction systématique — uniquement sur requête explicite |
@@ -824,8 +987,8 @@ display(_criteres.style.set_properties(**{"text-align": "left"}))
 # puis confrontée aux cibles fixées *a priori* en §8 (`config.CIBLES_PERFORMANCE`).
 #
 # Deux scénarios d'usage :
-# - **Inférence unitaire** : webhook CRM déclenché à chaque date de renouvellement.
-# - **Inférence batch** : job nocturne sur 5 000 comptes.
+# - **Inférence unitaire** : appel synchrone à l'ouverture d'une fiche client dans le CRM (§2, CU3).
+# - **Inférence batch** : job nocturne quotidien sur 5 000 comptes (§2, CU1 et CU2).
 
 # %%
 rapport_latence = mesurer_latence(modele_final, X)
@@ -869,8 +1032,8 @@ display(
             f"Les deux contraintes de latence sont respectées : "
             f"p95 unitaire = **{_lat_p95:.1f} ms** (< {_cible_unit} ms) "
             f"et batch = **{_lat_batch:.2f} s** (< {_cible_batch} s).  "
-            "Le modèle est compatible avec un déploiement en API synchrone (webhook CRM) "
-            "et en job batch nocturne."
+            "Le modèle est compatible avec un déploiement en API synchrone (consultation de "
+            "fiche client) et en job batch nocturne."
             if _lat_ok
             else "⚠️ Au moins une contrainte de latence n'est pas respectée.  "
             "Pistes d'amélioration : réduire `n_estimators`, "
@@ -883,7 +1046,9 @@ display(
 # > ### 📋 Journal de bord — Entraînement et validation (§9 complet)
 # >
 # > **Décisions retenues** — Protocole `RepeatedStratifiedKFold(5, 3)` partagé entre tous les
-# > modèles ; PR-AUC comme métrique principale (adapté au déséquilibre) ; `class_weight='balanced'`
+# > modèles ; PR-AUC comme métrique principale (adapté au déséquilibre) ; champion confirmé par
+# > un test de Wilcoxon apparié sur les 15 plis, corrigé par Holm, avec règle de parcimonie
+# > (§9.3.1, protocole §8.8) ; `class_weight='balanced'`
 # > retenu pour le seuil économique (probabilités calibrées) ; SMOTE testé uniquement comme
 # > comparaison méthodologique.  Optuna TPE + MedianPruner sur 30 essais (5-fold StratifiedKFold),
 # > étude persistée en SQLite ; gain marginal (≤ 0.02) signalé explicitement.  Réentraînement
@@ -897,7 +1062,9 @@ display(
 # >
 # > **Difficultés rencontrées** — CodeCarbon sous WSL2 : pas d'accès RAPL → estimation TDP,
 # > exposée honnêtement (mode et facteur d'émission affichés).  Latence de l'optimisation Optuna :
-# > résolue par stockage SQLite + cache JSON via `charger_ou_calculer`.
+# > résolue par stockage SQLite + cache JSON via `charger_ou_calculer`.  Test de Wilcoxon promis
+# > en §8.8 mais d'abord impossible : `evaluer_modele` ne conservait que moyenne et écart-type ;
+# > les 15 PR-AUC par pli sont désormais conservées dans le cache de comparaison.
 # >
 # > **Impact sur la suite** — Le modèle sérialisé (`modele_final.joblib`) alimente §10 (API et
 # > déploiement), §12 (seuil économique, SHAP, ROI), §13 (monitoring et réentraînement) et la

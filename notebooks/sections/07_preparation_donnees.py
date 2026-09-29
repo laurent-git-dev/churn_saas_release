@@ -48,7 +48,7 @@ from churn_saas.features.enrichissement import (
 _DECISIONS_EDA = [
     (
         "Cible déséquilibrée",
-        "La prévalence du churn (~15–20 %) invalide l'accuracy comme métrique principale. "
+        "La prévalence du churn (~28 %, mesurée en §6) invalide l'accuracy comme métrique principale. "
         "Conséquence §7 : aucun sur-échantillonnage appliqué dans la préparation "
         "(il sera géré dans le Pipeline sklearn de §9 via class_weight='balanced').",
     ),

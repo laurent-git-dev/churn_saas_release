@@ -103,7 +103,9 @@ _cout_mensuel_cs = (
     * config.HYPOTHESES_ECONOMIQUES["cout_horaire_csm_eur"]
     * config.HYPOTHESES_ECONOMIQUES["duree_geste_retention_h"]
 )
-_roi = _mrr_sauve / _cout_mensuel_cs if _cout_mensuel_cs > 0 else 0.0
+# ROI par cohorte (définition de §12.12) : les gestes d'un mois retiennent des contrats qui
+# rapportent sur tout l'horizon, d'où la comparaison de _gain_annuel au coût du mois.
+_roi = (_gain_annuel - _cout_mensuel_cs) / _cout_mensuel_cs if _cout_mensuel_cs > 0 else 0.0
 
 # %%
 display(
@@ -144,7 +146,7 @@ display(
 | Seuil de décision | τ* = {seuil_opt:.2f} | Argmax du gain net espéré (§12.5) |
 | Régime opérationnel | Top-{_cap} comptes/mois | Contrainte capacité CS (3 × 15 gestes) |
 | Anti-fuite | `COLONNES_INTERDITES` + Pipeline sklearn | `test_no_leakage.py` bloquant en CI |
-| Déploiement | FastAPI + Docker + Prefect | Batch nocturne + API webhook CRM |
+| Déploiement | FastAPI + Docker + Prefect | Batch nocturne quotidien (revue du lundi, alertes) + API à l'ouverture d'une fiche client |
 """
     )
 )
@@ -171,8 +173,9 @@ display(
 |---|---|
 | Précision@{_cap} | **{precision_cap:.1%}** ({_n_churners_detectes} churners réels dans le top-{_cap}) |
 | MRR churners couverts | {_mrr_couvert:,.0f} €/mois |
-| **Gain net espéré annuel** | **{_gain_annuel:,.0f} €/an** |
-| ROI mensuel (gain / coût CS) | **{_roi:.1f}×** |
+| Coût mensuel CS (gestes) | {_cout_mensuel_cs:,.0f} €/mois |
+| **Valeur sauvée par la cohorte du mois** ({config.HYPOTHESES_ECONOMIQUES['horizon_mois']} mois) | **{_gain_annuel:,.0f} €** |
+| ROI de la cohorte mensuelle ((valeur − coût) / coût) | **{_roi:.1f}×** |
 """
     )
 )
@@ -187,8 +190,9 @@ display(
         f"En régime opérationnel (top-{_cap} comptes/mois), il identifie "
         f"**{_n_churners_detectes} churners réels** sur {_cap} interventions "
         f"(précision : **{precision_cap:.1%}**).  "
-        f"Le gain net espéré est de **{_gain_annuel:,.0f} €/an** pour un coût mensuel CS de "
-        f"{_cout_mensuel_cs:,.0f} € (ROI = {_roi:.1f}×), "
+        f"Les gestes d'un mois coûtent {_cout_mensuel_cs:,.0f} € et sauvent une marge espérée de "
+        f"**{_gain_annuel:,.0f} €** sur {config.HYPOTHESES_ECONOMIQUES['horizon_mois']} mois "
+        f"(ROI de la cohorte = {_roi:.1f}×), "
         f"sous les hypothèses économiques documentées en §12.4."
     )
 )

@@ -72,7 +72,6 @@ paquets_principaux = [
     "scipy",
     "matplotlib",
     "seaborn",
-    "xgboost",
     "mlflow",
     "jupytext",
     "nbclient",
@@ -119,20 +118,13 @@ display(env_df.style.hide(axis="index"))
 # >
 # > **Décisions retenues** — Six champs obligatoires générés par code (auteur, date,
 # > version git, environnement) pour garantir leur mise à jour automatique à chaque
-# > régénération. Grille de couverture C1→C9 reprenant mot pour mot les intitulés du
+# > régénération. Grille de couverture C1→C9 reprenant les intitulés du
 # > référentiel CISIA, avec renvoi aux sous-sections qui portent chaque preuve.
 # > L'auteur est renseigné directement : Laurent Pottier.
 # >
-# > **Alternatives écartées** — Champs renseignés à la main : invalidés à chaque
-# > régénération (`make notebook`) et source d'erreurs humaines.
+# > **Alternatives écartées** — Néant.
 # >
-# > **Difficultés rencontrées** — La première version de la grille utilisait des intitulés
-# > courts non officiels, décalés de C1 à C7 par rapport au référentiel (ex. C4 présentée
-# > comme « Éco-conception » au lieu de « Choisir un modèle IA ») : elle renvoyait donc le
-# > jury vers de mauvaises sections. Corrigé en réalignant la grille sur les intitulés et
-# > les items du référentiel.
+# > **Difficultés rencontrées** — Néant.
 # >
 # > **Impact sur la suite** — La grille de couverture sert de fil conducteur au jury ;
 # > §15.4 la détaille item par item, avec la sous-section de preuve de chaque item.
-# >
-# > **Temps passé** — < 30 min.

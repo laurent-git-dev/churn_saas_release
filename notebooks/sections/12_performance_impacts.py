@@ -237,8 +237,8 @@ display(_df_latence)
 display(
     Markdown(
         f"**Ce qu'il faut retenir.** Les deux contraintes opérationnelles fixées *a priori* en §8 "
-        f"sont testées ici : (1) latence unitaire ≤ {_cible_unit} ms pour le webhook CRM "
-        f"déclenché à la date de renouvellement, (2) batch 5 000 comptes ≤ {_cible_batch} s "
+        f"sont testées ici : (1) latence unitaire ≤ {_cible_unit} ms pour l'appel synchrone "
+        f"à l'ouverture d'une fiche client (§2, CU3), (2) batch 5 000 comptes ≤ {_cible_batch} s "
         "pour la fenêtre de maintenance nocturne. Le modèle arbre (RandomForest / HGBT) "
         "est naturellement rapide à l'inférence."
     )
@@ -260,7 +260,7 @@ display(
 | Coût intervention CSM | {mat['cout_intervention_eur']:.0f} € | {config.HYPOTHESES_ECONOMIQUES['cout_horaire_csm_eur']:.0f} €/h × {config.HYPOTHESES_ECONOMIQUES['duree_geste_retention_h']:.0f} h |
 | Taux de succès rétention | {config.HYPOTHESES_ECONOMIQUES['taux_succes_retention']:.0%} | Gainsight 2023 Customer Success Industry Report |
 | Horizon de calcul | {config.HYPOTHESES_ECONOMIQUES['horizon_mois']} mois | Durée contractuelle typique |
-| Capacité CS mensuelle | {int(config.HYPOTHESES_ECONOMIQUES['capacite_gestes_mois'])} gestes | Estimation CS Lead |
+| Capacité CS mensuelle | {int(config.HYPOTHESES_ECONOMIQUES['capacite_gestes_mois'])} gestes | Hypothèse de cadrage : 3 CSM × 15 gestes/mois (~20 % de leur temps, §2.3) |
 
 **Matrice des coûts** :
 - **VP** (churner détecté) : gain net = MRR × {config.HYPOTHESES_ECONOMIQUES['horizon_mois']} × {config.HYPOTHESES_ECONOMIQUES['marge_brute_pct']:.0%} × {config.HYPOTHESES_ECONOMIQUES['taux_succes_retention']:.0%} − {mat['cout_intervention_eur']:.0f} €
@@ -837,7 +837,10 @@ _n_churners_detectes = int(_y_top_n.sum())
 _mrr_couvert = float((_mrr_top_n * _y_top_n).sum())
 _cout_total_mois = _cap * float(config.HYPOTHESES_ECONOMIQUES["cout_horaire_csm_eur"]) * float(config.HYPOTHESES_ECONOMIQUES["duree_geste_retention_h"])
 _mrr_sauve_esperance = _mrr_couvert * float(config.HYPOTHESES_ECONOMIQUES["taux_succes_retention"]) * float(config.HYPOTHESES_ECONOMIQUES["marge_brute_pct"])
-_roi = (_mrr_sauve_esperance * float(config.HYPOTHESES_ECONOMIQUES["horizon_mois"]) - _cout_total_mois) / _cout_total_mois if _cout_total_mois > 0 else 0.0
+# ROI par cohorte : les gestes d'un mois retiennent des contrats qui rapportent sur tout
+# l'horizon (12 mois), pas sur le seul mois du geste — même logique qu'en §2.4.
+_valeur_cohorte = _mrr_sauve_esperance * float(config.HYPOTHESES_ECONOMIQUES["horizon_mois"])
+_roi = (_valeur_cohorte - _cout_total_mois) / _cout_total_mois if _cout_total_mois > 0 else 0.0
 
 _precision_top_n = precision_cap
 _fatigue_alerte = 1.0 - _precision_top_n
@@ -847,9 +850,10 @@ df_kpi = pd.DataFrame([
     {"KPI": f"Précision@{_cap} (dont vrais churners)", "Valeur": f"{_precision_top_n:.1%}", "Commentaire": f"{_n_churners_detectes} churners réels détectés"},
     {"KPI": "Fatigue d'alerte (taux FP)", "Valeur": f"{_fatigue_alerte:.1%}", "Commentaire": "Fraction d'alertes inutiles"},
     {"KPI": "MRR churners couverts", "Valeur": f"{_mrr_couvert:,.0f} €/mois", "Commentaire": "MRR des churners dans le top-N"},
-    {"KPI": "Gain net espéré (mensuel)", "Valeur": f"{_mrr_sauve_esperance:,.0f} €/mois", "Commentaire": f"MRR × {config.HYPOTHESES_ECONOMIQUES['taux_succes_retention']:.0%} × marge"},
+    {"KPI": "Marge mensuelle sauvée espérée", "Valeur": f"{_mrr_sauve_esperance:,.0f} €/mois", "Commentaire": f"MRR × {config.HYPOTHESES_ECONOMIQUES['taux_succes_retention']:.0%} × marge"},
+    {"KPI": f"Valeur sauvée par la cohorte du mois ({config.HYPOTHESES_ECONOMIQUES['horizon_mois']} mois)", "Valeur": f"{_valeur_cohorte:,.0f} €", "Commentaire": f"Marge mensuelle sauvée × {config.HYPOTHESES_ECONOMIQUES['horizon_mois']} mois"},
     {"KPI": "Coût mensuel CS (gestes)", "Valeur": f"{_cout_total_mois:,.0f} €/mois", "Commentaire": f"{_cap} × {config.HYPOTHESES_ECONOMIQUES['cout_horaire_csm_eur']:.0f}€/h × {config.HYPOTHESES_ECONOMIQUES['duree_geste_retention_h']:.0f}h"},
-    {"KPI": "ROI mensuel (gain net / coût)", "Valeur": f"{_roi:.1f}×", "Commentaire": "Rentabilité de l'équipe CS avec le modèle"},
+    {"KPI": "ROI de la cohorte mensuelle", "Valeur": f"{_roi:.1f}×", "Commentaire": "(valeur sauvée − coût) / coût : rendement net par euro de geste CS"},
 ]).set_index("KPI")
 
 display(df_kpi.style.set_properties(**{"text-align": "left"}))
@@ -864,8 +868,9 @@ display(
 )
 
 # %% [markdown]
-# **Ce qu'il faut retenir.** Le ROI mensuel quantifie le gain net par euro investi dans
-# l'équipe CS outillée par le modèle. Le calcul est **conservateur** (taux de succès
+# **Ce qu'il faut retenir.** Le ROI de la cohorte mensuelle quantifie le gain net par euro
+# investi dans les gestes CS d'un mois, en comptant la marge sauvée sur tout l'horizon
+# contractuel (12 mois) des comptes retenus. Le calcul est **conservateur** (taux de succès
 # de 30 %) et explicitement conditionnel aux hypothèses. Le KPI de fatigue d'alerte est
 # aussi important que la précision technique : un modèle trop sensible qui déclenche
 # des interventions inutiles détruit la confiance de l'équipe et son adoption.
@@ -909,7 +914,7 @@ df_slo = pd.DataFrame([
         "Statut": "✅" if _lat_batch <= _cible_batch else "❌",
     },
     {
-        "Indicateur (SLI)": "ROI mensuel",
+        "Indicateur (SLI)": "ROI de la cohorte mensuelle",
         "SLO nominal": "≥ 1,5×",
         "Seuil d'alerte": "< 1,5×",
         "Seuil critique (suspension)": "< 1,0×",
@@ -1042,9 +1047,10 @@ display(
 
 - Le système détecte **{_n_churners_detectes} churners réels** parmi les {_cap} comptes les plus
   à risque chaque mois, avec une précision de **{_precision_top_n:.0%}**.
-- Le gain net espéré mensuel est de **{_mrr_sauve_esperance:,.0f} €** pour un coût CS de
-  {_cout_total_mois:,.0f} €/mois (ROI = {_roi:.1f}×).
-- Le modèle respecte les contraintes de latence fixées en §8 (webhook < {_cible_unit} ms,
+- Les gestes d'un mois coûtent {_cout_total_mois:,.0f} € et sauvent une marge espérée de
+  **{_valeur_cohorte:,.0f} €** sur {config.HYPOTHESES_ECONOMIQUES['horizon_mois']} mois
+  (ROI de la cohorte = {_roi:.1f}×).
+- Le modèle respecte les contraintes de latence fixées en §8 (fiche client < {_cible_unit} ms,
   batch 5 000 comptes < {_cible_batch} s).
 - Les 4 leurres annoncés ont été identifiés et caractérisés avec 3 preuves convergentes.
 
@@ -1061,7 +1067,8 @@ display(
 
 Le commanditaire est invité à valider **deux décisions** :
 
-1. **Déploiement en production** du pipeline de scoring mensuel (batch) sur le socle Prefect §13.
+1. **Déploiement en production** du pipeline de scoring nocturne quotidien (batch) sur le socle
+   Prefect §10.
 2. **Révision trimestrielle** des hypothèses économiques (taux de succès, coût intervention)
    par le comité CS Lead + Direction commerciale.
 
@@ -1101,11 +1108,11 @@ point de vigilance n°1).
 # %%
 df_actions_systeme = pd.DataFrame([
     {
-        "Indicateur surveillé": "PR-AUC (monitoring mensuel Evidently §13)",
+        "Indicateur surveillé": "PR-AUC (à chaque vague de renouvellements, §13)",
         "Seuil d'alerte": f"< {config.CIBLES_PERFORMANCE['pr_auc_min']:.2f}",
         "Seuil critique": f"< {config.CIBLES_PERFORMANCE['pr_auc_min'] - 0.05:.2f}",
         "Action déclenchée": "Alerter DS Lead — investigation",
-        "Action critique": "Suspendre le scoring · Réentraîner",
+        "Action critique": "Retour au champion précédent (rollback §13) · Réentraîner",
         "Responsable": "Data Scientist",
     },
     {
@@ -1117,7 +1124,7 @@ df_actions_systeme = pd.DataFrame([
         "Responsable": "Data Engineer",
     },
     {
-        "Indicateur surveillé": "ROI mensuel (§12.12)",
+        "Indicateur surveillé": "ROI de la cohorte mensuelle (§12.12)",
         "Seuil d'alerte": "ROI < 1,5×",
         "Seuil critique": "ROI < 1,0×",
         "Action déclenchée": "Réviser les hypothèses économiques",
@@ -1139,7 +1146,9 @@ display(Markdown(
     "**Ce qu'il faut retenir.** Cette table définit les engagements de pilotage (*SLA système*) "
     "du modèle en production. Les seuils d'alerte déclenchent une investigation humaine ; "
     "les seuils critiques déclenchent une action automatisée (gate CI/CD §13). "
-    "Le monitoring Evidently (§13) produit ces indicateurs à chaque run hebdomadaire."
+    "Les indicateurs n'ont pas tous le même rythme : la dérive (PSI) est contrôlée chaque jour "
+    "par Evidently (§13) ; la PR-AUC et la précision ne sont recalculables qu'à chaque vague de "
+    "renouvellements, quand le churn effectif devient observable ; le ROI est suivi chaque mois."
 ))
 
 # %% [markdown]
@@ -1165,8 +1174,8 @@ display(Markdown(
 # > sur les noms transformés.
 # >
 # > **Impact sur la suite** — Le seuil τ* et la table de décision alimentent §13
-# > (monitoring de la dérive). Le gain net mensuel est le KPI de monitoring principal :
-# > si le ROI tombe sous 1×, le réentraînement est déclenché.
+# > (monitoring de la dérive). Le ROI de la cohorte mensuelle est le KPI de monitoring
+# > principal : s'il tombe sous 1×, le réentraînement est déclenché.
 # >
 # > **Temps passé** — 3 h de conception + implémentation ; 20 min pour les calculs lourds
 # > (OOF, SHAP, drop-column) — cachés pour les régénérations suivantes.

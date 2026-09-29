@@ -98,7 +98,7 @@
 #     end
 #
 #     NAVIGATEUR -->|HTTPS| GW
-#     CRM_CLIENT -->|Export CSV / Webhook| S3
+#     CRM_CLIENT -->|Export CSV quotidien| S3
 #     GW --> WAF
 #     WAF --> API_CONT
 #     API_CONT --> MLFLOW
@@ -115,8 +115,9 @@
 # %% [markdown]
 # ### 11.3 Diagramme de séquence — Score à la demande (CSM → API → CRM)
 #
-# Cas d'usage clé de §2 : un CSM ouvre une fiche compte à l'occasion d'un renouvellement
-# ou d'une escalade support. Le CRM interroge l'API et affiche le score en temps réel.
+# Cas d'usage 3 de §2 : un CSM ouvre une fiche compte à l'occasion d'un renouvellement
+# ou d'une escalade support. Le CRM interroge l'API de façon synchrone et affiche le score
+# pendant le chargement de la fiche (p95 < 200 ms).
 
 # %% [markdown]
 # ```mermaid
@@ -134,7 +135,7 @@
 #     GW->>API: Requête transmise
 #
 #     API->>REG: Charger modèle champion (cache local 1 h)
-#     REG-->>API: XGBoost v2.3 — Production
+#     REG-->>API: Pipeline régression logistique (champion §9) — stade Production
 #
 #     API->>API: Inférence → score_churn = 0.78 décile = 9
 #     API->>API: SHAP local → top 3 facteurs
@@ -149,9 +150,15 @@
 # ```
 
 # %% [markdown]
-# **Ce qu'il faut retenir.** La latence de bout en bout est dominée par l'inférence SHAP locale
-# (≈ 40 ms pour XGBoost sur 5 000 comptes). Le cache modèle (TTL = 1 h) évite les appels
-# répétés au registre sans risquer d'exposer un modèle obsolète.
+# **Ce qu'il faut retenir.** Le champion retenu en §9 étant une régression logistique,
+# l'explication SHAP locale y est peu coûteuse : pour un modèle linéaire, la contribution de chaque
+# variable se déduit directement de son coefficient (`LinearExplainer`), sans exploration
+# d'arbres. Le budget de latence (p95 < 200 ms) est donc surtout consommé par le réseau, la
+# passerelle et la persistance du résultat ; la latence d'inférence réelle est mesurée en §9 et
+# §12. Le cache modèle (TTL = 1 h) évite les appels répétés au registre sans risquer d'exposer
+# un modèle obsolète. Écart assumé entre cible et existant : l'API livrée en §10 renvoie les
+# trois facteurs de risque à partir des règles issues de l'EDA (§6) ; le SHAP local en ligne
+# est une évolution de cette architecture cible.
 
 # %% [markdown]
 # ### 11.4 Compte-rendu d'entretien avec les acteurs
@@ -164,6 +171,8 @@
 # %%
 import pandas as pd
 from IPython.display import display
+
+from churn_saas import config
 
 entretiens = [
     {
@@ -223,7 +232,8 @@ entretiens = [
             "avec un indicateur explicite d'incertitude."
         ),
         "Impact sur l'architecture": (
-            "Intégration Salesforce via champ custom + Flow Builder (webhook POST /predict). "
+            "Intégration Salesforce via champ custom + Flow Builder appelant POST /predict "
+            "au chargement de la fiche client (cas d'usage 3 de §2). "
             "Réponse API obligatoirement enrichie des top 3 features SHAP et d'une recommandation texte. "
             "Job batch Prefect planifié à 00 h 00 pour disponibilité à 05 h. "
             "Champ incertitude_score ajouté (intervalle de confiance à 90 %) pour les comptes jeunes."
@@ -247,7 +257,7 @@ display(df_entretiens[["Acteur", "Contraintes remontées"]])
 # | **Volume** — passage de 5 k à 50 k comptes | Infrastructure doit scaler sans refonte (ECS auto-scaling) | DSI | Scénario B prévu jusqu'à ~50 k comptes ; au-delà → réévaluation scénario C (Phase 3, §11.7) |
 # | **Portabilité** — changement de cloud provider | Pas de lock-in SDK propriétaire ; images Docker standard | RSSI | Conteneurs sans dépendance SageMaker/Vertex ; Parquet + PostgreSQL standards |
 # | **Réplicabilité** — extension à d'autres produits / marchés | Séparation config/code ; un seul `config.py` par produit suffit | Responsable CS | Architecture paramétrée via `churn_saas/config.py` ; pipeline réutilisable par simple fork |
-# | **Robustesse temporelle** — évolution du comportement des données | Drift détecté avant dégradation modèle | DPO + Équipe ML | PSI > 0,2 → réentraînement automatique (§13) ; SLO AUC ≥ 0,78 (§11.8) |
+# | **Robustesse temporelle** — évolution du comportement des données | Drift détecté avant dégradation modèle | DPO + Équipe ML | PSI > 0,2 → réentraînement automatique (§13) ; SLO PR-AUC ≥ `pr_auc_min` (§11.8) |
 # | **Contrainte de compétences** — équipe sans spécialiste MLOps | Services entièrement managés, runbook simple | DSI + Ops | Scénario B exclu Kubernetes ; runbook documenté en §11.9 |
 
 # %% [markdown]
@@ -264,7 +274,7 @@ contraintes = [
     {
         "Dimension": "Technique",
         "Contrainte": "Latence API p95 < 200 ms",
-        "Conséquence architecturale": "Inférence XGBoost en mémoire, cache modèle TTL 1 h, pas de cold-start",
+        "Conséquence architecturale": "Pipeline scikit-learn (régression logistique) chargé en mémoire, cache modèle TTL 1 h, pas de cold-start",
     },
     {
         "Dimension": "Technique",
@@ -463,6 +473,11 @@ display(df_scenarios)
 # (Service Level Indicator) est la mesure qui permet de vérifier que le SLO est tenu.
 
 # %%
+# Mêmes seuils de qualité que la table d'actions de §12 : alerte sous la cible a priori,
+# critique 5 points en dessous.
+_pr_auc_min = config.CIBLES_PERFORMANCE["pr_auc_min"]
+_pr_auc_critique = _pr_auc_min - 0.05
+
 slo_sli = [
     {
         "Indicateur (SLI)": "Fraîcheur des scores",
@@ -500,8 +515,8 @@ slo_sli = [
     {
         "Indicateur (SLI)": "Drift des données (PSI)",
         "SLO cible": "PSI < 0,2 sur toutes les features en production",
-        "Mesure": "Rapport Evidently hebdomadaire — Population Stability Index",
-        "Seuil d'alerte": "PSI > 0,1 → signalement comité mensuel",
+        "Mesure": "Contrôle Evidently quotidien — Population Stability Index",
+        "Seuil d'alerte": "PSI > 0,1 → signalement au comité trimestriel",
         "Seuil critique": "PSI > 0,2 → déclenchement du playbook de réentraînement (§13)",
         "Remédiation": (
             "Analyser la feature driftée. Si changement métier légitime : mettre à jour "
@@ -509,15 +524,20 @@ slo_sli = [
         ),
     },
     {
-        "Indicateur (SLI)": "Qualité du modèle (AUC-ROC batch)",
-        "SLO cible": "AUC-ROC ≥ 0,78 sur les 500 derniers comptes scorés (fenêtre glissante 30 j)",
-        "Mesure": "Job Prefect hebdomadaire — calcul sur données étiquetées a posteriori",
-        "Seuil d'alerte": "AUC < 0,82 → alerte responsable ML",
-        "Seuil critique": "AUC < 0,78 → gel automatique du modèle, retour au champion précédent",
+        "Indicateur (SLI)": "Qualité du modèle (PR-AUC)",
+        "SLO cible": f"PR-AUC ≥ {_pr_auc_min:.2f} sur les comptes arrivés à échéance",
+        "Mesure": (
+            "À chaque vague de renouvellements — calcul sur les labels devenus observables (§13)"
+        ),
+        "Seuil d'alerte": f"PR-AUC < {_pr_auc_min:.2f} → alerte responsable ML",
+        "Seuil critique": (
+            f"PR-AUC < {_pr_auc_critique:.2f} → retour au champion précédent (rollback §13)"
+        ),
         "Remédiation": (
             "Analyse SHAP pour identifier les features dégradées. "
             "Déclenchement réentraînement si PSI > 0,2 confirmé. "
-            "Challenger entraîné en parallèle, promu si AUC > champion + 0,02."
+            "Challenger entraîné en parallèle, promu seulement s'il passe la gate de §13 "
+            "(PR-AUC challenger ≥ PR-AUC champion − 1 pt)."
         ),
     },
 ]
@@ -529,7 +549,7 @@ display(df_slo)
 # **Ce qu'il faut retenir.** Cinq indicateurs couvrent les deux dimensions de la fiabilité :
 # infrastructure (latence, disponibilité) et ML (fraîcheur, drift, qualité). Chaque SLO est
 # associé à une procédure de remédiation graduée — alerte puis incident — pour éviter les décisions
-# silencieuses en mode dégradé. Le seuil AUC < 0,78 déclenche un retour automatique au champion
+# silencieuses en mode dégradé. Le seuil critique de PR-AUC déclenche un retour au champion
 # précédent, ce qui garantit la continuité de service même lors d'une régression de modèle.
 
 # %% [markdown]
@@ -545,8 +565,8 @@ acteurs_run = [
     },
     {
         "Acteur": "Responsable Customer Success",
-        "Rôle": "Pilote la stratégie de rétention, valide les seuils de priorité, participe au comité de revue mensuel",
-        "Interaction avec le système": "Dashboard agrégé, alertes hebdomadaires par email, revue des KPI métier",
+        "Rôle": "Pilote la stratégie de rétention, valide les seuils de priorité, participe au comité de revue trimestriel",
+        "Interaction avec le système": "Dashboard agrégé, liste priorisée du lundi, revue des KPI métier",
         "Formation requise": "2 h — lecture des métriques métier et arbitrage des seuils",
     },
     {
@@ -601,7 +621,7 @@ display(df_acteurs)
 # > tarifs publics AWS 2025 ; une validation par un devis réel (console AWS Pricing Calculator)
 # > est recommandée avant engagement.
 # >
-# > **Impact sur la suite** — Les SLO définis ici (fraîcheur < 24 h, p95 < 200 ms, AUC ≥ 0,78)
+# > **Impact sur la suite** — Les SLO définis ici (fraîcheur < 24 h, p95 < 200 ms, PR-AUC ≥ `pr_auc_min`)
 # > alimentent directement les seuils d'alerte de §12 (performance) et le playbook de
 # > réentraînement de §13 (amélioration continue).
 # >

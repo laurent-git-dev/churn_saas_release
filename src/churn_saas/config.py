@@ -61,7 +61,8 @@ HYPOTHESES_ECONOMIQUES: dict[str, float | int] = {
     # Source : Glassdoor 2024 × coefficient charges patronales ≈ 1,45 → ~55 €/h
     "cout_horaire_csm_eur": 55,
     # Durée d'un geste de rétention complet : préparation + appel + suivi CRM
-    # Source : estimation CS Lead consolidée sur 3 mois de données de tickets internes
+    # Hypothèse de cadrage (l'énoncé ne la fournit pas) : ~30 min de préparation, ~1 h d'appel,
+    # ~30 min de compte rendu CRM et de suivi. À mesurer sur les premiers mois de déploiement.
     "duree_geste_retention_h": 2,
     # Taux de succès d'une intervention ciblée sur un compte identifié à risque élevé
     # Source : Gainsight 2023 Customer Success Industry Report — intervention proactive
@@ -70,7 +71,11 @@ HYPOTHESES_ECONOMIQUES: dict[str, float | int] = {
     # Source : durée contractuelle typique du portefeuille (renouvellements annuels)
     "horizon_mois": 12,
     # Capacité mensuelle de l'équipe CS (nombre de gestes de rétention réalisables)
-    # Source : CS Lead — 3 CSM × ~15 gestes ciblés/mois = 45
+    # Hypothèse de cadrage (l'énoncé ne la fournit pas) : 3 CSM × 15 gestes/mois = 45.
+    # 15 gestes × 2 h = 30 h/mois, soit ~20 % d'un temps plein (~150 h/mois) : le reste va à
+    # l'onboarding, au support et aux renouvellements. 3 CSM pour ~5 000 comptes (~1 700 par
+    # CSM) est très au-delà des repères low-touch (~150 comptes/CSM) : ce sous-dimensionnement
+    # est le problème que le modèle adresse, pas une norme.
     "capacite_gestes_mois": 45,
 }
 
@@ -80,14 +85,14 @@ HYPOTHESES_ECONOMIQUES: dict[str, float | int] = {
 # le cherry-picking de métriques a posteriori.
 # ---------------------------------------------------------------------------
 CIBLES_PERFORMANCE: dict[str, float | int] = {
-    # PR-AUC : métrique principale pour la classification déséquilibrée (~15–20 % de churn).
-    # Un modèle aléatoire donnerait PR-AUC ≈ 0.17 ; le seuil de 0.65 représente
+    # PR-AUC : métrique principale pour la classification déséquilibrée (~28 % de churn, §6).
+    # Un modèle aléatoire donnerait PR-AUC ≈ 0.28 (la prévalence) ; le seuil de 0.65 représente
     # le gain minimal justifiant le coût de déploiement et d'exploitation.
     "pr_auc_min": 0.65,
-    # Latence d'inférence unitaire (ms) — mode API synchrone, un compte à la fois.
-    # Contrainte : intégration dans un webhook CRM déclenché à la date de renouvellement.
+    # Latence d'inférence unitaire (ms, p95) — mode API synchrone, un compte à la fois.
+    # Contrainte : appel à l'ouverture d'une fiche client dans le CRM (CU3), un CSM attend.
     "latence_unitaire_ms": 200,
-    # Latence du batch pour 5 000 comptes (secondes) — job nocturne hebdomadaire.
+    # Latence du batch pour 5 000 comptes (secondes) — job nocturne quotidien.
     # Contrainte : le batch doit tenir dans la fenêtre de maintenance (< 5 min).
     "latence_batch_5k_s": 300,
 }

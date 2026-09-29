@@ -4,7 +4,7 @@
 # Cette section analyse les obligations légales et les risques éthiques du modèle de prédiction
 # de churn SaaS B2B. Elle couvre : conformité RGPD, classification AI Act, chartes européennes
 # et françaises, biais mesurés par sous-groupe, dilemmes d'usage identifiés. Elle produit les
-# artefacts exigés par C2 : registre des risques (`docs/RISK_REGISTER.md`), note de synthèse
+# artefacts exigés : registre des risques (`docs/RISK_REGISTER.md`), note de synthèse
 # au commanditaire, fiche de revue DPO/juriste (simulée et assumée comme telle).
 
 # %% [markdown]
@@ -40,58 +40,15 @@
 # l'article 22 (hors champ), il relève d'un **choix de gouvernance** : responsabilité humaine
 # assumée, réduction du risque d'erreur systématique, meilleure acceptabilité interne.
 
-# %%
-import pandas as pd
-from IPython.display import display
-
-# Tableau de conformité RGPD
-rgpd_items = [
-    {
-        "Exigence RGPD": "Base légale (art. 6)",
-        "Application au projet": "Données entreprises : hors champ RGPD. "
-        "Pour les contacts opérationnels associés : intérêt légitime (art. 6.1.f) — "
-        "prévention de la résiliation dans une relation contractuelle préexistante.",
-        "Mesure retenue": "Mention dans le registre de traitements du DPO. "
-        "Analyse d'intérêt légitime documentée.",
-    },
-    {
-        "Exigence RGPD": "Minimisation (art. 5.1.c)",
-        "Application au projet": "`commentaire_csm` : texte libre pouvant contenir "
-        "des données personnelles de contacts identifiables.",
-        "Mesure retenue": "Variable exclue du modèle (config.COLONNES_LEURRES_SUSPECTES). "
-        "Justification documentée dans §7.",
-    },
-    {
-        "Exigence RGPD": "Finalité (art. 5.1.b)",
-        "Application au projet": "Prédiction du risque de résiliation pour orientation "
-        "des actions de rétention CS — finalité explicitement définie.",
-        "Mesure retenue": "Finalité inscrite dans la fiche de traitement. "
-        "Réutilisation à d'autres fins (scoring crédit, tarification discriminante) interdite.",
-    },
-    {
-        "Exigence RGPD": "Durée de conservation (art. 5.1.e)",
-        "Application au projet": "Prédictions et scores stockés pour suivi des actions CS.",
-        "Mesure retenue": "Durée maximale : 24 mois (alignée sur le cycle contractuel annuel "
-        "+ 1 an de comparaison). Suppression automatique à l'expiration.",
-    },
-    {
-        "Exigence RGPD": "Information (art. 13/14)",
-        "Application au projet": "Les contacts opérationnels dont les coordonnées transitent "
-        "dans le CRM doivent être informés du traitement.",
-        "Mesure retenue": "Mention ajoutée aux CGU / politique de confidentialité de l'éditeur. "
-        "Hors périmètre du présent modèle — action transmise au DPO.",
-    },
-    {
-        "Exigence RGPD": "Article 22 — décision automatisée",
-        "Application au projet": "Hors champ B2B (personnes morales). "
-        "Humain dans la boucle maintenu par choix de conception.",
-        "Mesure retenue": "Le modèle produit un score de risque ; "
-        "la décision d'action est prise par le CSM.",
-    },
-]
-
-df_rgpd = pd.DataFrame(rgpd_items).set_index("Exigence RGPD")
-display(df_rgpd.style.set_properties(**{"text-align": "left", "white-space": "pre-wrap"}))
+# %% [markdown]
+# | Exigence RGPD | Application au projet | Mesure retenue |
+# |---|---|---|
+# | **Base légale (art. 6)** | Données entreprises : hors champ RGPD. Pour les contacts opérationnels associés : intérêt légitime (art. 6.1.f) — prévention de la résiliation dans une relation contractuelle préexistante. | Mention dans le registre de traitements du DPO. Analyse d'intérêt légitime documentée. |
+# | **Minimisation (art. 5.1.c)** | `commentaire_csm` : texte libre pouvant contenir des données personnelles de contacts identifiables. | Variable exclue du modèle (`config.COLONNES_LEURRES_SUSPECTES`). Justification documentée dans §7. |
+# | **Finalité (art. 5.1.b)** | Prédiction du risque de résiliation pour orientation des actions de rétention CS — finalité explicitement définie. | Finalité inscrite dans la fiche de traitement. Réutilisation à d'autres fins (scoring crédit, tarification discriminante) interdite. |
+# | **Durée de conservation (art. 5.1.e)** | Prédictions et scores stockés pour suivi des actions CS. | Durée maximale : 24 mois (alignée sur le cycle contractuel annuel + 1 an de comparaison). Suppression automatique à l'expiration. |
+# | **Information (art. 13/14)** | Les contacts opérationnels dont les coordonnées transitent dans le CRM doivent être informés du traitement. | Mention ajoutée aux CGU / politique de confidentialité de l'éditeur. Hors périmètre du présent modèle — action transmise au DPO. |
+# | **Article 22 — décision automatisée** | Hors champ B2B (personnes morales). Humain dans la boucle maintenu par choix de conception. | Le modèle produit un score de risque ; la décision d'action est prise par le CSM. |
 
 # %% [markdown]
 # **Ce qu'il faut retenir.** Le RGPD s'applique marginalement à ce projet B2B : les cibles
@@ -107,55 +64,13 @@ display(df_rgpd.style.set_properties(**{"text-align": "left", "white-space": "pr
 # Le règlement (UE) 2024/1689 sur l'intelligence artificielle (AI Act) est entré en application
 # progressivement depuis août 2024. Son champ d'application est large.
 
-# %%
-# Tableau de classification AI Act
-ai_act_items = [
-    {
-        "Étape d'analyse": "Art. 3(1) — Le système est-il un « système d'IA » ?",
-        "Analyse": "Oui, sans ambiguïté. L'article 3(1) définit un système d'IA comme "
-        "un système à base de machine conçu pour fonctionner avec des niveaux d'autonomie "
-        "variables, qui génère des résultats tels que des prédictions, recommandations ou "
-        "décisions influençant des environnements réels. Une régression logistique, un "
-        "gradient boosting ou toute autre méthode ML entre dans cette définition. "
-        "L'AI Act ne se limite pas au deep learning.",
-        "Conclusion": "Système d'IA — AI Act applicable.",
-    },
-    {
-        "Étape d'analyse": "Art. 5 — Pratiques interdites",
-        "Analyse": "L'article 5 prohibe notamment : la manipulation subliminale, "
-        "l'exploitation de vulnérabilités, la notation sociale généralisée, "
-        "la biométrie de masse. "
-        "Si le score alimente une politique tarifaire différenciée, un risque de "
-        "manipulation commerciale existe. Notre usage : aide à la priorisation CS, "
-        "sans tarification automatique ni exploitation de vulnérabilités. "
-        "Pas de notation sociale (périmètre B2B). Pas de biométrie.",
-        "Conclusion": "Non concerné par les pratiques interdites. "
-        "À surveiller si le score est couplé à une tarification automatique.",
-    },
-    {
-        "Étape d'analyse": "Annexe III — Systèmes à haut risque",
-        "Analyse": "L'annexe III liste 8 domaines haut risque : biométrie, "
-        "infrastructures critiques, éducation, emploi et gestion des travailleurs, "
-        "accès à des services essentiels (crédit, assurance, sécurité sociale), "
-        "répression, justice, démocratie. "
-        "Notre système : ciblage commercial B2B. "
-        "Pas d'emploi, pas de scoring de crédit, pas d'accès à un service essentiel, "
-        "pas de biométrie, pas de répression. Le ciblage commercial B2B n'y figure pas.",
-        "Conclusion": "Hors haut risque (Annexe III non applicable).",
-    },
-    {
-        "Étape d'analyse": "Classification finale et obligations",
-        "Analyse": "Risque minimal. Les obligations sont limitées : "
-        "pas de conformité obligatoire au titre du haut risque. "
-        "Néanmoins, alignement volontaire sur les exigences de transparence "
-        "et de documentation technique (model card, datasheet, registre des risques) — "
-        "pratiques que ce projet produit intégralement.",
-        "Conclusion": "Risque minimal. Alignement volontaire sur la transparence.",
-    },
-]
-
-df_ai_act = pd.DataFrame(ai_act_items).set_index("Étape d'analyse")
-display(df_ai_act.style.set_properties(**{"text-align": "left", "white-space": "pre-wrap"}))
+# %% [markdown]
+# | Étape d'analyse | Analyse | Conclusion |
+# |---|---|---|
+# | **Art. 3(1) — Le système est-il un « système d'IA » ?** | Oui, sans ambiguïté. L'article 3(1) définit un système d'IA comme un système à base de machine conçu pour fonctionner avec des niveaux d'autonomie variables, qui génère des résultats tels que des prédictions, recommandations ou décisions influençant des environnements réels. Une régression logistique, un gradient boosting ou toute autre méthode ML entre dans cette définition. L'AI Act ne se limite pas au deep learning. | Système d'IA — AI Act applicable. |
+# | **Art. 5 — Pratiques interdites** | L'article 5 prohibe notamment : la manipulation subliminale, l'exploitation de vulnérabilités, la notation sociale généralisée, la biométrie de masse. Si le score alimente une politique tarifaire différenciée, un risque de manipulation commerciale existe. Notre usage : aide à la priorisation CS, sans tarification automatique ni exploitation de vulnérabilités. Pas de notation sociale (périmètre B2B). Pas de biométrie. | Non concerné par les pratiques interdites. À surveiller si le score est couplé à une tarification automatique. |
+# | **Annexe III — Systèmes à haut risque** | L'annexe III liste 8 domaines haut risque : biométrie, infrastructures critiques, éducation, emploi et gestion des travailleurs, accès à des services essentiels (crédit, assurance, sécurité sociale), répression, justice, démocratie. Notre système : ciblage commercial B2B. Pas d'emploi, pas de scoring de crédit, pas d'accès à un service essentiel, pas de biométrie, pas de répression. Le ciblage commercial B2B n'y figure pas. | Hors haut risque (Annexe III non applicable). |
+# | **Classification finale et obligations** | Risque minimal. Les obligations sont limitées : pas de conformité obligatoire au titre du haut risque. Néanmoins, alignement volontaire sur les exigences de transparence et de documentation technique (model card, datasheet, registre des risques) — pratiques que ce projet produit intégralement. | Risque minimal. Alignement volontaire sur la transparence. |
 
 # %% [markdown]
 # **Ce qu'il faut retenir.** Le système est bien un « système d'IA » au sens de l'article 3(1),
@@ -174,126 +89,33 @@ display(df_ai_act.style.set_properties(**{"text-align": "left", "white-space": "
 # en 2019 les lignes directrices pour une IA digne de confiance (« Ethics Guidelines for
 # Trustworthy AI »). Elles définissent 7 exigences clés.
 
-# %%
-# Tableau des 7 exigences HLEG × mesures concrètes du projet
-hleg_items = [
-    {
-        "Exigence HLEG": "1. Primauté de l'humain et surveillance",
-        "Description": "Les systèmes d'IA doivent soutenir l'autonomie humaine "
-        "et permettre une supervision effective.",
-        "Mesure concrète dans le projet": "• Score de risque interprétable (SHAP §9). "
-        "• Décision finale déléguée au CSM, jamais au modèle seul. "
-        "• Tableau de bord avec indicateur de confiance et alertes de drift (§13). "
-        "• Possibilité de suspendre le système si performance dégradée (playbook §13).",
-    },
-    {
-        "Exigence HLEG": "2. Robustesse technique et sécurité",
-        "Description": "Le système doit être fiable, précis et résistant aux perturbations.",
-        "Mesure concrète dans le projet": "• Test de robustesse à l'inférence (bruit gaussien "
-        "et valeurs manquantes ajoutés — §13). "
-        "• Graine unique (config.RANDOM_SEED=42) pour la reproductibilité. "
-        "• Pipeline scikit-learn fitté dans chaque pli de CV : zéro fuite de données.",
-    },
-    {
-        "Exigence HLEG": "3. Vie privée et gouvernance des données",
-        "Description": "Les données personnelles doivent être protégées et leur usage gouverné.",
-        "Mesure concrète dans le projet": "• Exclusion de `commentaire_csm` (minimisation). "
-        "• config.COLONNES_INTERDITES appliquée automatiquement dans le pipeline. "
-        "• Datasheet documentée (docs/DATASHEET.md). "
-        "• Durée de conservation définie (24 mois — cf. §4.1).",
-    },
-    {
-        "Exigence HLEG": "4. Transparence",
-        "Description": "Traçabilité des systèmes, explicabilité des décisions, "
-        "communication ouverte sur les capacités et limites.",
-        "Mesure concrète dans le projet": "• SHAP values par compte (§9) — explicabilité locale. "
-        "• Model card (MLflow Registry §10). "
-        "• Notebook entièrement exécutable — toute affirmation chiffrée est produite par le code. "
-        "• Limites assumées explicitement (§14).",
-    },
-    {
-        "Exigence HLEG": "5. Diversité, non-discrimination et équité",
-        "Description": "Éviter les biais injustes et garantir l'accessibilité.",
-        "Mesure concrète dans le projet": "• Mesure des biais par pays, taille et secteur (§4.4). "
-        "• Groupe témoin non traité (~10 %) pour évaluer l'impact réel des interventions (§4.5). "
-        "• Revue de fairness documentée dans la fiche DPO (§4.6).",
-    },
-    {
-        "Exigence HLEG": "6. Bien-être sociétal et environnemental",
-        "Description": "Prendre en compte les impacts sur la société et l'environnement.",
-        "Mesure concrète dans le projet": "• Estimation de l'empreinte carbone via CodeCarbon (§9/§12). "
-        "• Note d'arbitrage performance/coût/carbone transmise au commanditaire (§8). "
-        "• Analyse des 3 dilemmes éthiques sociétaux (§4.5).",
-    },
-    {
-        "Exigence HLEG": "7. Responsabilité",
-        "Description": "Mécanismes d'imputabilité, d'audit et de recours.",
-        "Mesure concrète dans le projet": "• Registre des risques (docs/RISK_REGISTER.md). "
-        "• Propriétaires assignés à chaque risque. "
-        "• Fiche DPO/juriste simulée (§4.6). "
-        "• Versioning modèle + données (MLflow + DVC §10). "
-        "• Playbook de réponse aux incidents (§13).",
-    },
-]
-
-df_hleg = pd.DataFrame(hleg_items).set_index("Exigence HLEG")
-display(df_hleg.style.set_properties(**{"text-align": "left", "white-space": "pre-wrap"}))
+# %% [markdown]
+# | Exigence HLEG | Description | Mesure concrète dans le projet |
+# |---|---|---|
+# | **1. Primauté de l'humain et surveillance** | Les systèmes d'IA doivent soutenir l'autonomie humaine et permettre une supervision effective. | • Score de risque interprétable (SHAP §9).<br>• Décision finale déléguée au CSM, jamais au modèle seul.<br>• Tableau de bord avec indicateur de confiance et alertes de drift (§13).<br>• Possibilité de suspendre le système si performance dégradée (playbook §13). |
+# | **2. Robustesse technique et sécurité** | Le système doit être fiable, précis et résistant aux perturbations. | • Test de robustesse à l'inférence (bruit gaussien et valeurs manquantes ajoutés — §13).<br>• Graine unique (`config.RANDOM_SEED`) pour la reproductibilité.<br>• Pipeline scikit-learn fitté dans chaque pli de CV : zéro fuite de données. |
+# | **3. Vie privée et gouvernance des données** | Les données personnelles doivent être protégées et leur usage gouverné. | • Exclusion de `commentaire_csm` (minimisation).<br>• `config.COLONNES_INTERDITES` appliquée automatiquement dans le pipeline.<br>• Datasheet documentée (`docs/DATASHEET.md`).<br>• Durée de conservation définie (24 mois — cf. §4.1). |
+# | **4. Transparence** | Traçabilité des systèmes, explicabilité des décisions, communication ouverte sur les capacités et limites. | • SHAP values par compte (§9) — explicabilité locale.<br>• Model card (MLflow Registry §10).<br>• Notebook entièrement exécutable — toute affirmation chiffrée est produite par le code.<br>• Limites assumées explicitement (§14). |
+# | **5. Diversité, non-discrimination et équité** | Éviter les biais injustes et garantir l'accessibilité. | • Mesure des biais par pays, taille et secteur (§4.4).<br>• Groupe témoin non traité (~10 %) pour évaluer l'impact réel des interventions (§4.5).<br>• Revue de fairness documentée dans la fiche DPO (§4.6). |
+# | **6. Bien-être sociétal et environnemental** | Prendre en compte les impacts sur la société et l'environnement. | • Estimation de l'empreinte carbone via CodeCarbon (§9/§12).<br>• Note d'arbitrage performance/coût/carbone transmise au commanditaire (§8).<br>• Analyse des 3 dilemmes éthiques sociétaux (§4.5). |
+# | **7. Responsabilité** | Mécanismes d'imputabilité, d'audit et de recours. | • Registre des risques (`docs/RISK_REGISTER.md`).<br>• Propriétaires assignés à chaque risque.<br>• Fiche DPO/juriste simulée (§4.6).<br>• Versioning modèle + données (MLflow + DVC §10).<br>• Playbook de réponse aux incidents (§13). |
 
 # %% [markdown]
 # **Ce qu'il faut retenir.** Les 7 exigences HLEG sont toutes couvertes par des mesures
 # concrètes et traçables dans le projet. La transparence et la responsabilité constituent
-# les axes les plus documentés, conformément aux recommandations du jury CISIA.
+# les axes les plus documentés.
 
 # %% [markdown]
 # #### 4.3.2 Volet français — Rapport Villani, recommandations CNIL et charte Impact AI
 #
 # Au-delà du cadre européen, trois références françaises structurent l'approche éthique du projet.
 
-# %%
-volet_francais = [
-    {
-        "Référence": "Rapport Villani\n« Donner un sens à l'IA »\n(2018)",
-        "Contenu pertinent": "Mission interministérielle co-pilotée par Cédric Villani. "
-        "Recommandations structurantes : transparence algorithmique, explicabilité des décisions "
-        "à fort impact, développement d'une IA « de confiance » respectueuse des droits "
-        "fondamentaux, formation des équipes, et investissement dans la recherche en éthique de l'IA.",
-        "Application au projet": "• Explicabilité locale SHAP (§9) — répond à l'enjeu "
-        "de transparence algorithmique. "
-        "• Formation documentée des CSM à l'interprétation du score (§10). "
-        "• Ce notebook assume les limites du modèle et les documente explicitement (§14).",
-    },
-    {
-        "Référence": "Recommandations CNIL\nsur l'IA\n(2022 et suiv.)",
-        "Contenu pertinent": "La CNIL a publié une série de recommandations sur les systèmes "
-        "d'IA : privacy by design, droit à l'explication, vigilance renforcée sur les biais, "
-        "transparence sur les traitements automatisés, et consignes spécifiques sur "
-        "l'IA générative et le profilage. "
-        "Note : ces recommandations s'appliquent aux traitements de données personnelles ; "
-        "leur portée directe est marginale en contexte B2B, mais leur esprit oriente les bonnes "
-        "pratiques retenues.",
-        "Application au projet": "• Privacy by design : exclusion préventive de `commentaire_csm`. "
-        "• Droit à l'explication : SHAP par compte + tableau de bord interprétable. "
-        "• Biais : mesure systématique par sous-groupe (§4.4). "
-        "• Fiche de revue DPO documentée (§4.6).",
-    },
-    {
-        "Référence": "Charte Impact AI\n(coalition française)",
-        "Contenu pertinent": "Coalition d'organisations françaises (entreprises, institutions, "
-        "associations) engagées pour un développement responsable de l'IA. "
-        "La charte engage les signataires sur : transparence, équité, responsabilité, "
-        "formation des équipes, gouvernance des données et réduction de l'empreinte "
-        "environnementale. "
-        "Note : la charte est une démarche volontaire sans valeur réglementaire. "
-        "Elle est citée ici comme référence d'engagement sectoriel, non comme obligation.",
-        "Application au projet": "• Transparence : notebook entièrement exécutable. "
-        "• Équité : registre des risques et mesure des biais. "
-        "• Environnement : estimation CodeCarbon (§9/§12). "
-        "• Formation : guide d'usage CSM (§10).",
-    },
-]
-
-df_fr = pd.DataFrame(volet_francais).set_index("Référence")
-display(df_fr.style.set_properties(**{"text-align": "left", "white-space": "pre-wrap"}))
+# %% [markdown]
+# | Référence | Contenu pertinent | Application au projet |
+# |---|---|---|
+# | **Rapport Villani**<br>« Donner un sens à l'IA »<br>(2018) | Mission interministérielle co-pilotée par Cédric Villani. Recommandations structurantes : transparence algorithmique, explicabilité des décisions à fort impact, développement d'une IA « de confiance » respectueuse des droits fondamentaux, formation des équipes, et investissement dans la recherche en éthique de l'IA. | • Explicabilité locale SHAP (§9) — répond à l'enjeu de transparence algorithmique.<br>• Formation documentée des CSM à l'interprétation du score (§10).<br>• Ce notebook assume les limites du modèle et les documente explicitement (§14). |
+# | **Recommandations CNIL**<br>sur l'IA<br>(2022 et suiv.) | La CNIL a publié une série de recommandations sur les systèmes d'IA : privacy by design, droit à l'explication, vigilance renforcée sur les biais, transparence sur les traitements automatisés, et consignes spécifiques sur l'IA générative et le profilage. *Note : ces recommandations s'appliquent aux traitements de données personnelles ; leur portée directe est marginale en contexte B2B, mais leur esprit oriente les bonnes pratiques retenues.* | • Privacy by design : exclusion préventive de `commentaire_csm`.<br>• Droit à l'explication : SHAP par compte + tableau de bord interprétable.<br>• Biais : mesure systématique par sous-groupe (§4.4).<br>• Fiche de revue DPO documentée (§4.6). |
+# | **Charte Impact AI**<br>(coalition française) | Coalition d'organisations françaises (entreprises, institutions, associations) engagées pour un développement responsable de l'IA. La charte engage les signataires sur : transparence, équité, responsabilité, formation des équipes, gouvernance des données et réduction de l'empreinte environnementale. *Note : la charte est une démarche volontaire sans valeur réglementaire. Elle est citée ici comme référence d'engagement sectoriel, non comme obligation.* | • Transparence : notebook entièrement exécutable.<br>• Équité : registre des risques et mesure des biais.<br>• Environnement : estimation CodeCarbon (§9/§12).<br>• Formation : guide d'usage CSM (§10). |
 
 # %% [markdown]
 # **Ce qu'il faut retenir.** Les trois références françaises — rapport Villani (stratégie
@@ -321,6 +143,8 @@ display(df_fr.style.set_properties(**{"text-align": "left", "white-space": "pre-
 import warnings
 
 import numpy as np
+import pandas as pd
+from IPython.display import display
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
@@ -422,21 +246,18 @@ tables_biais, _ = charger_ou_calculer("biais_sous_groupes.joblib", _calculer_bia
 # #### 4.4.1 Biais par pays
 
 # %%
-print("=== Métriques d'équité par PAYS ===")
 display(tables_biais["pays"])
 
 # %% [markdown]
 # #### 4.4.2 Biais par taille d'entreprise
 
 # %%
-print("=== Métriques d'équité par TAILLE D'ENTREPRISE ===")
 display(tables_biais["taille_entreprise"])
 
 # %% [markdown]
 # #### 4.4.3 Biais par secteur
 
 # %%
-print("=== Métriques d'équité par SECTEUR ===")
 display(tables_biais["secteur"])
 
 # %% [markdown]
@@ -454,7 +275,6 @@ for var, df_biais in tables_biais.items():
     print(f"[{var}] Écart TPR = {ecart_tpr:.3f} | Écart FPR = {ecart_fpr:.3f} | {alerte}")
 
 print(f"\nSeuil d'alerte : écart de TPR > {seuil_alerte_tpr:.0%} entre sous-groupes.")
-print("Tout écart significatif est documenté dans docs/RISK_REGISTER.md (R01).")
 
 # %% [markdown]
 # **Ce qu'il faut retenir.** Les métriques d'équité sont calculées sur un modèle de référence
@@ -462,7 +282,8 @@ print("Tout écart significatif est documenté dans docs/RISK_REGISTER.md (R01).
 # analysées (`pays`, `taille_entreprise`, `secteur`) sont des attributs d'entreprise, non des
 # données personnelles. Un écart de TPR supérieur à 15 points entre sous-groupes déclencherait
 # une revue obligatoire avant déploiement — seuil choisi en référence aux pratiques de fairness
-# ML (cf. IBM AI Fairness 360). La même analyse sera répétée sur le modèle champion en §12.
+# ML (cf. IBM AI Fairness 360). Tout écart significatif est documenté dans
+# `docs/RISK_REGISTER.md` (R01). La même analyse sera répétée sur le modèle champion en §12.
 
 # %% [markdown]
 # ---
@@ -536,37 +357,14 @@ print("Tout écart significatif est documenté dans docs/RISK_REGISTER.md (R01).
 #   par le commanditaire. Il est présenté ici comme condition nécessaire à la robustesse
 #   scientifique du système, non comme une décision automatique.
 
-# %%
-# Synthèse des dilemmes
-dilemmes = [
-    {
-        "Dilemme": "1 — Prophétie auto-réalisatrice",
-        "Mécanisme": "Petits comptes signalés → dépriorisés → résiliation confirmée",
-        "Probabilité": "Élevée",
-        "Impact": "Élevé",
-        "Mitigation": "Règle de priorisation MRR×risque + quota petits comptes + groupe témoin",
-        "Référence RISK_REGISTER": "R02",
-    },
-    {
-        "Dilemme": "2 — Incitation perverse (remise)",
-        "Mécanisme": "Remise systématique → gaming du modèle + deadweight loss commercial",
-        "Probabilité": "Moyenne",
-        "Impact": "Moyen",
-        "Mitigation": "Décision humaine obligatoire + monitoring taux de remise + drift features",
-        "Référence RISK_REGISTER": "R03",
-    },
-    {
-        "Dilemme": "3 — Boucle de rétroaction",
-        "Mécanisme": "Actions CS modifient l'issue → labels biaisés → dégradation silencieuse du modèle",
-        "Probabilité": "Élevée",
-        "Impact": "Élevé",
-        "Mitigation": "Groupe témoin 10 % non traité pour labels contrefactuels",
-        "Référence RISK_REGISTER": "R04",
-    },
-]
-
-df_dilemmes = pd.DataFrame(dilemmes).set_index("Dilemme")
-display(df_dilemmes.style.set_properties(**{"text-align": "left", "white-space": "pre-wrap"}))
+# %% [markdown]
+# **Synthèse des dilemmes**
+#
+# | Dilemme | Mécanisme | Probabilité | Impact | Mitigation | Réf. RISK_REGISTER |
+# |---|---|---|---|---|---|
+# | **1 — Prophétie auto-réalisatrice** | Petits comptes signalés → dépriorisés → résiliation confirmée | Élevée | Élevé | Règle de priorisation MRR×risque + quota petits comptes + groupe témoin | R02 |
+# | **2 — Incitation perverse (remise)** | Remise systématique → gaming du modèle + deadweight loss commercial | Moyenne | Moyen | Décision humaine obligatoire + monitoring taux de remise + drift features | R03 |
+# | **3 — Boucle de rétroaction** | Actions CS modifient l'issue → labels biaisés → dégradation silencieuse du modèle | Élevée | Élevé | Groupe témoin 10 % non traité pour labels contrefactuels | R04 |
 
 # %% [markdown]
 # **Ce qu'il faut retenir.** Les trois dilemmes identifiés sont des risques systémiques inhérents
@@ -583,28 +381,24 @@ display(df_dilemmes.style.set_properties(**{"text-align": "left", "white-space":
 #
 # Le registre complet des risques est maintenu dans `docs/RISK_REGISTER.md`.
 # Il couvre 8 risques identifiés, avec probabilité, impact, mitigation et propriétaire assigné.
-# Ce registre est l'artefact principal de traçabilité des risques pour le jury C2.
+# Ce registre est l'artefact principal de traçabilité des risques : il constitue la trace
+# de communication des risques aux acteurs concernés. La note de synthèse datée au commanditaire
+# est reproduite plus bas (§4.6.2).
+#
+# | ID | Risque | Propriétaire |
+# |---|---|---|
+# | R01 | Biais commercial par sous-groupe | Data Scientist |
+# | R02 | Prophétie auto-réalisatrice (petits comptes) | CS Lead |
+# | R03 | Incitation perverse (remises automatiques) | Dir. Commercial |
+# | R04 | Boucle de rétroaction (distribution corrompue) | Data Scientist |
+# | R05 | Fuite de données perso via `commentaire_csm` | DPO |
+# | R06 | Sur-confiance (modèle non calibré) | Data Scientist |
+# | R07 | Obsolescence non détectée du modèle | MLOps / Data Scientist |
+# | R08 | Usage inadapté du score par les CSM | CS Lead |
+#
+# La cellule suivante vérifie que le registre est bien présent dans le livrable.
 
 # %%
-print("Registre des risques : docs/RISK_REGISTER.md")
-print("Pour consultation, ouvrir le fichier directement.")
-print()
-# Résumé court en tableau pour le notebook
-risques_resume = [
-    {"ID": "R01", "Risque": "Biais commercial par sous-groupe", "Propriétaire": "Data Scientist"},
-    {"ID": "R02", "Risque": "Prophétie auto-réalisatrice (petits comptes)", "Propriétaire": "CS Lead"},
-    {"ID": "R03", "Risque": "Incitation perverse (remises automatiques)", "Propriétaire": "Dir. Commercial"},
-    {"ID": "R04", "Risque": "Boucle de rétroaction (distribution corrompue)", "Propriétaire": "Data Scientist"},
-    {"ID": "R05", "Risque": "Fuite de données perso via commentaire_csm", "Propriétaire": "DPO"},
-    {"ID": "R06", "Risque": "Sur-confiance (modèle non calibré)", "Propriétaire": "Data Scientist"},
-    {"ID": "R07", "Risque": "Obsolescence non détectée du modèle", "Propriétaire": "MLOps / Data Scientist"},
-    {"ID": "R08", "Risque": "Usage inadapté du score par les CSM", "Propriétaire": "CS Lead"},
-]
-display(pd.DataFrame(risques_resume).set_index("ID"))
-
-# %%
-from churn_saas import config
-
 _risk_register = config.RACINE / "docs" / "RISK_REGISTER.md"
 assert _risk_register.exists(), (
     "docs/RISK_REGISTER.md introuvable — vérifier que le fichier est inclus dans le ZIP de livraison."
@@ -612,8 +406,6 @@ assert _risk_register.exists(), (
 _taille = _risk_register.stat().st_size
 _lignes = len(_risk_register.read_text(encoding="utf-8").splitlines())
 print(f"✓ docs/RISK_REGISTER.md présent ({_taille} octets, {_lignes} lignes).")
-print("  Ce registre constitue la trace de communication des risques aux acteurs concernés (item C2).")
-print("  La note de synthèse datée au commanditaire est reproduite ci-dessous (§4.6.2).")
 
 # %% [markdown]
 # #### 4.6.2 Note de synthèse au commanditaire
@@ -661,8 +453,6 @@ print("  La note de synthèse datée au commanditaire est reproduite ci-dessous 
 # > - Formation des CSM à l'interprétation du score (§10).
 # > - Comité de revue trimestriel des métriques de fairness et de performance (§13).
 # >
-# > *Cette note constitue la traçabilité de la communication des risques aux acteurs concernés,
-# > conformément à l'item C2 de la certification CISIA.*
 # > ---
 
 # %% [markdown]
@@ -701,8 +491,6 @@ print("  La note de synthèse datée au commanditaire est reproduite ci-dessous 
 # > **Levées de réserve :**
 # > Réserves 1, 3, 4 levées. Réserve 2 et 5 ouvertes, avec propriétaires assignés.
 # >
-# > **Signature (simulée) :** DPO / Juriste interne — *[Non signé — document de démonstration
-# > pédagogique]*
 # > ---
 
 # %% [markdown]
@@ -729,17 +517,12 @@ print("  La note de synthèse datée au commanditaire est reproduite ci-dessous 
 # > modèle champion pour l'audit de fairness en §4 (le champion n'est pas encore entraîné à
 # > ce stade du notebook — modèle dédié retenu à la place).
 # >
-# > **Difficultés rencontrées** — Tension entre la position chronologique de §4 (avant
+# > **Difficultés rencontrées** — Interrogation entre la position chronologique de §4 (avant
 # > l'entraînement §9) et la nécessité de calculer TPR/FPR qui requièrent un modèle. Résolue
 # > par un modèle logistique dédié à l'audit, mis en cache via `charger_ou_calculer()`, et une
 # > note explicite précisant que le champion sera réévalué en §12.
-# > Incertitude sur les formulations exactes de la charte Impact AI : référencée à son niveau
-# > d'engagement général, sans citation d'articles spécifiques non vérifiés.
 # >
 # > **Impact sur la suite** — §12 (mesure de performance) reprend l'analyse de fairness sur
 # > le modèle champion. §13 (amélioration continue) documente le protocole du groupe témoin
 # > et la revue trimestrielle des métriques d'équité. La note de synthèse au commanditaire
 # > conditionne le déploiement (groupe témoin à valider).
-# >
-# > **Temps passé** — Environ 3 h (analyse juridique, rédaction des artefacts, code de
-# > mesure des biais).

@@ -44,7 +44,7 @@ display(
 # Bibliothèques utilisées dans le projet (capturées, pas recopiées)
 _BIBS_CLES = [
     "scikit-learn",
-    "xgboost",
+    "scipy",
     "pandas",
     "numpy",
     "matplotlib",
@@ -385,7 +385,9 @@ display(
 - Villani, C. (2018). *Donner un sens à l'intelligence artificielle*. Rapport au Premier ministre.
 - CNIL (2022). *Recommandations sur les systèmes d'IA — Lignes directrices*.
 - HLEG AI (2019). *Ethics Guidelines for Trustworthy AI*. Commission européenne.
-- Chen, T., & Guestrin, C. (2016). *XGBoost: A Scalable Tree Boosting System*. KDD 2016.
+- Ke, G. et al. (2017). *LightGBM: A Highly Efficient Gradient Boosting Decision Tree*. NeurIPS 2017 (principe repris par `HistGradientBoostingClassifier`).
+- Wilcoxon, F. (1945). *Individual Comparisons by Ranking Methods*. Biometrics Bulletin, 1(6), 80–83 (test apparié, §9.3.1).
+- Holm, S. (1979). *A Simple Sequentially Rejective Multiple Test Procedure*. Scandinavian Journal of Statistics, 6(2), 65–70 (correction pour tests multiples, §9.3.1).
 - Akiba, T. et al. (2019). *Optuna: A Next-generation Hyperparameter Optimization Framework*. KDD 2019.
 - Lundberg, S. M., & Lee, S.-I. (2017). *A Unified Approach to Interpreting Model Predictions*. NeurIPS 2017.
 - Siddiqi, N. (2006). *Credit Risk Scorecards*. Wiley (seuils PSI).
