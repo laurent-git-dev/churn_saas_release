@@ -2,8 +2,10 @@
 # ## 12. Mesure de performance et impacts (C8)
 #
 # Cette section est le cœur technique du livrable : elle produit **toutes** les sorties
-# obligatoires de la grille C8 (métriques, économie, explicabilité, régression, restitution)
-# et montre que le modèle est prêt à être déployé au sens des contraintes fixées en §8.
+# obligatoires de l'énoncé (classification, explicabilité, régression) et les preuves de la
+# compétence C8 (indicateurs mesurés, restitution, actions déclenchées). Elle porte aussi deux
+# items de C4 (analyse ROC, temps d'inférence) et montre que le modèle est prêt à être déployé
+# au sens des contraintes fixées en §8.
 #
 # **Plan :**
 # 12.1 Chargement des artefacts et jeu d'évaluation (prédictions out-of-fold)
@@ -114,7 +116,7 @@ display(
 )
 
 # %% [markdown]
-# ### 12.2 Métriques techniques de classification
+# ### 12.2 Métriques techniques de classification — item C4 : analyse ROC
 
 # %% [markdown]
 # #### 12.2.1 Courbe ROC et AUC
@@ -204,7 +206,7 @@ display(df_metriques.style.format({"valeur": "{:.4f}"}).hide(axis="index"))
 # *(Renseignée après §12.5 — seuil optimal calculé sur les données OOF.)*
 
 # %% [markdown]
-# ### 12.3 Latence d'inférence — confrontation aux cibles §8
+# ### 12.3 Latence d'inférence — confrontation aux cibles §8 (item C4 : temps d'inférence)
 
 # %%
 rapport_latence = mesurer_latence(modele_final, X)
@@ -411,7 +413,7 @@ display(df_sensib.style.format({"seuil_optimal": "{:.2f}", "gain_max_eur": "{:,.
 # signalerait qu'il faudrait mesurer empiriquement le taux de succès avant tout déploiement.
 
 # %% [markdown]
-# ### 12.8 Explicabilité — importance, permutation et SHAP (C8)
+# ### 12.8 Explicabilité — importance, permutation et SHAP (sortie obligatoire)
 #
 # Trois niveaux de preuve, du moins au plus rigoureux (point de vigilance n°5) :
 # 1. **Impureté (MDI)** — biaisée vers la cardinalité, montrée avec sa mise en garde.
@@ -560,13 +562,13 @@ plt.show()
 # calculée de façon additive et exhaustive (toutes combinaisons de coalitions).
 
 # %% [markdown]
-# ### 12.9 Verdict sur les leurres — 3 preuves convergentes (C5)
+# ### 12.9 Verdict sur les leurres — 3 preuves convergentes (C3 · sortie obligatoire)
 #
 # Point de vigilance n°5 : une importance de permutation nulle ne prouve pas qu'une
 # variable est un leurre. Preuve en trois temps, convergente.
 
 # %%
-# Preuve 1 : association marginale (cribler_leurres — déjà calculé en §6)
+# Preuve 1 : association marginale (cribler_leurres — déjà calculé en §6.10)
 gold_pour_criblage = pd.read_parquet(config.DONNEES_GOLD / "gold_dataset.parquet")
 
 _colonnes_leurres = config.COLONNES_LEURRES_SUSPECTES
@@ -926,7 +928,7 @@ display(Markdown(
 ))
 
 # %% [markdown]
-# ### 12.13 Empreinte carbone (ESTIMATION)
+# ### 12.13 Empreinte carbone (ESTIMATION) — items C4 (éco-conception) et C8
 #
 # ⚠️ Sous WSL2, CodeCarbon n'a pas accès aux compteurs RAPL. Il **estime** la consommation
 # à partir du TDP et du mix électrique français (point de vigilance n°6).

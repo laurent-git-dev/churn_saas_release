@@ -108,7 +108,7 @@ display(
 )
 
 # %% [markdown]
-# ### 8.2 Cibles de performance a priori — item C4 : « performance attendue »
+# ### 8.2 Cibles de performance a priori — item C4 : « performance attendue » · item C8 : indicateurs et seuils
 #
 # **Principe scientifique** : les seuils d'acceptabilité sont fixés *avant* de voir les résultats.
 # Fixer des cibles *après* revient à du cherry-picking et invalide la démarche aux yeux du jury.

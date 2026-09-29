@@ -62,7 +62,7 @@ _DECISIONS_EDA = [
         "Quatre leurres annoncés",
         "`couleur_theme_interface`, `code_datacenter`, `groupe_experimentation`, "
         "`commentaire_csm` sont conservés dans le gold pour que le jury puisse vérifier "
-        "leur inutilité prédictive (importance ≈ 0 en §9). Leur exclusion aveugle serait "
+        "leur inutilité prédictive (importance ≈ 0 en §12.8, verdict en §12.9). Leur exclusion aveugle serait "
         "moins probante qu'une preuve chiffrée.",
     ),
     (
@@ -341,7 +341,7 @@ display(
 # %% [markdown]
 # ### 7.4 Traitement des valeurs manquantes
 #
-# La stratégie d'imputation dépend du mécanisme de manquance identifié en §6 :
+# La stratégie d'imputation dépend du mécanisme de manquance identifié en §5.8 :
 # - **MNAR** : créer un indicateur de manquance (feature prédictive) **puis** imputer.
 #   Un CSAT manquant révèle probablement un client insatisfait — l'indicateur est lui-même un signal.
 # - **MAR** : imputation conditionnelle (médiane dans le Pipeline sklearn).
@@ -378,7 +378,7 @@ display(rapport_manquance[_cols_ok].style.format({"taux_manquants": "{:.1%}"}))
 # fittée **dans chaque pli** de validation croisée pour éviter la fuite.
 
 # %% [markdown]
-# ### 7.5 Feature engineering métier
+# ### 7.5 Feature engineering métier — item C5 : « le feature engineering est effectué »
 #
 # Les ~15 features dérivées ci-dessous sont calculées **ligne par ligne** à partir des colonnes
 # brutes — aucune statistique inter-observations n'est requise pour ces calculs.
@@ -747,9 +747,9 @@ else:
 # | Alternative | Raison du rejet |
 # |---|---|
 # | **Imputation KNN** (KNNImputer) | Complexité O(n²) inacceptable sur 5 000 lignes × 30 features lors de la CV. Avantage marginal sur la médiane pour des taux de manquance < 15 %. Conservé comme piste d'amélioration en §13. |
-# | **PCA avant modélisation** | Réduit l'interprétabilité (exigence CISIA C8 sur l'explicabilité). La dimensionnalité (< 50 features finales) ne justifie pas la réduction. |
+# | **PCA avant modélisation** | Réduit l'interprétabilité (sortie obligatoire d'explicabilité de l'énoncé, §12.8). La dimensionnalité (< 50 features finales) ne justifie pas la réduction. |
 # | **Encodage par la cible** (*target encoding*) | Fuite directe si appliqué avant le split : la moyenne de churn par modalité contient de l'information sur la cible. Implémentable dans un Pipeline avec `TargetEncoder` de sklearn 1.3+ — écarté ici au profit du OneHotEncoder pour la lisibilité jury. |
-# | **Suppression des leurres avant modélisation** | Le jury attend une preuve chiffrée (importance ≈ 0 en §9), pas une suppression aveugle. Les leurres restent dans le gold. |
+# | **Suppression des leurres avant modélisation** | Le jury attend une preuve chiffrée (importance ≈ 0 en §12.8, verdict en §12.9), pas une suppression aveugle. Les leurres restent dans le gold. |
 # | **Standardisation avant le split** | Constituerait une fuite (la moyenne et l'écart-type du train contaminent le test). StandardScaler est placé dans le Pipeline sklearn. |
 # | **SMOTE sur l'ensemble entier** | Fuite garantie : les exemples synthétiques du train contaminent le test. SMOTE ou `class_weight='balanced'` sont appliqués dans le Pipeline, à l'intérieur des plis. |
 

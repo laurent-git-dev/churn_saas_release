@@ -1,5 +1,5 @@
 # %% [markdown]
-# ## 2. Cadrage métier et cas d'usage
+# ## 2. Cadrage métier et cas d'usage (C1)
 #
 # Avant toute ligne de code, il faut répondre à la question : *pourquoi* ce projet ?
 # Cette section identifie le besoin métier, décrit trois cas d'usage opérationnels distincts,

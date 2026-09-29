@@ -1,5 +1,5 @@
 # %% [markdown]
-# ## 3. Données : disponibilité, gouvernance et alternatives
+# ## 3. Données : disponibilité, gouvernance et alternatives (C1)
 #
 # Cette section vérifie concrètement l'existence et l'accessibilité des sources (item C1),
 # présente le dictionnaire de données, argumente le choix du modèle de stockage (item C3),

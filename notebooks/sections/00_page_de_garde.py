@@ -98,36 +98,41 @@ display(env_df.style.hide(axis="index"))
 # %% [markdown]
 # ## Grille de couverture des compétences C1 → C9
 #
-# Chaque ligne indique quelle section du notebook démontre la compétence
-# et quel artefact en constitue la preuve. Cette table est le fil conducteur
-# du jury lors de l'évaluation.
+# Chaque ligne reprend l'intitulé officiel de la compétence du référentiel CISIA, les
+# sections du notebook qui la démontrent et les principales preuves. Cette table est le
+# fil conducteur du jury ; le détail **item par item** du référentiel figure en §15.4.
 #
-# | Compétence | Intitulé court | Section(s) | Artefacts de preuve |
+# | Compétence | Intitulé officiel | Section(s) | Preuves principales |
 # |---|---|---|---|
-# | **C1** | Cadrage du problème IA | §2, §4, §8 | Cas d'usage, valeur attendue, colonnes interdites, cibles de performance |
-# | **C2** | Données et gouvernance | §3, §5, §6 | Datasheet, contrôle qualité SHA-256, analyse EDA, détection des leurres |
-# | **C3** | Préparation des données | §7 | Pipeline ColumnTransformer, anti-fuite, `test_no_leakage.py`, jeu gold |
-# | **C4** | Éco-conception | §4, §9 | Tableau émissions CO₂ (CodeCarbon), arbitrage performance/carbone |
-# | **C5** | Choix et entraînement du modèle | §8, §9 | Comparatif PR-AUC 5 modèles, Optuna, gestion déséquilibre, note transfert learning |
-# | **C6** | Mise en exploitation | §10, §11 | TestClient (5 codes HTTP), gate MLflow, versioning 4 axes, CI/CD, Docker multi-stage |
-# | **C7** | Documentation et communication | §10, §14, §15 | Contrat API, table de décision seuil→action, annexes, glossaire |
-# | **C8** | Mesure de performance et impacts | §12 | PR-AUC/ROC-AUC/Brier OOF, seuil économique τ*, SHAP, verdict leurres 3 preuves, KPI |
-# | **C9** | Amélioration continue | §13 | Gate qualité CI/CD, PSI/KS, Evidently, robustesse, playbook réentraînement |
+# | **C1** | Identifier un jeu de données répondant aux besoins métiers | §2, §3 | Besoins Customer Success et 3 cas d'usage (§2.1–2.2), dictionnaire avec pertinence (§3.2), existence/accès vérifiés par code (§3.1), plan B (§3.4) |
+# | **C2** | Identifier les risques éthiques et sociétaux | §4 | Chartes UE + FR (§4.3), biais TPR/FPR par sous-groupe (§4.4), dilemmes arbitrés (§4.5), registre des risques, note commanditaire et revue DPO (§4.6) |
+# | **C3** | Préparer les données | §3, §5, §6, §7 | Stockage et cycle de vie soumis aux parties prenantes (§3.3–3.6), renommage (§5.9), doublons, types, dates, valeurs impossibles (§5.4–5.7), leurres (§6.10), pipeline anti-fuite (§7) |
+# | **C4** | Choisir un modèle IA | §8 (+ §9, §12) | Type de résultat (§8.1), cibles a priori (§8.2), contraintes opérationnelles (§8.3), éco-conception (§8.4, §9.8–9.10), build vs buy (§8.5), familles (§8.6), protocole (§8.7–8.8), analyse ROC (§12.2), latence (§9.13, §12.3) |
+# | **C5** | Entraîner le modèle | §9 (+ §7.5) | Comparatif des modèles (§9.3), Optuna et hyperparamètres (§9.7), transfert de connaissances (§9.11), réentraînement final (§9.12), feature engineering (§7.5) |
+# | **C6** | Implémenter le modèle | §10 | Contrat d'API (§10.2), MLflow et versioning 4 axes (§10.4–10.5), CI + job CD (§10.6), Docker (§10.7), contrat d'échange CRM (§10.8) |
+# | **C7** | Architecture cible | §11 | Compte-rendu d'entretien DSI/RSSI/DPO/CS (§11.4), 3 scénarios coût × complexité × souveraineté (§11.6), recommandation (§11.7) |
+# | **C8** | Mesurer la performance et les impacts | §12 (+ §8.2, §11.8) | Cibles et SLO/SLI (§8.2, §11.8), métriques techniques, KPI métier, ROI et carbone (§12.2, §12.12–12.13), note de restitution et table de décision (§12.15) |
+# | **C9** | Amélioration continue | §13 (+ §2.5) | Gate qualité en CI (§13.2), PSI/KS et Evidently (§13.3–13.4), robustesse (§13.5), obsolescence (§13.6), périodicité décidée au cadrage (§2.5, §13.11) |
 
 # %% [markdown]
 # > ### 📋 Journal de bord — Page de garde
 # >
 # > **Décisions retenues** — Six champs obligatoires générés par code (auteur, date,
 # > version git, environnement) pour garantir leur mise à jour automatique à chaque
-# > régénération. Grille de couverture C1→C9 alignée sur la nomenclature officielle CISIA
-# > (réconciliée avec §15.4). L'auteur est renseigné directement : Laurent Pottier.
+# > régénération. Grille de couverture C1→C9 reprenant mot pour mot les intitulés du
+# > référentiel CISIA, avec renvoi aux sous-sections qui portent chaque preuve.
+# > L'auteur est renseigné directement : Laurent Pottier.
 # >
 # > **Alternatives écartées** — Champs renseignés à la main : invalidés à chaque
 # > régénération (`make notebook`) et source d'erreurs humaines.
 # >
-# > **Difficultés rencontrées** — Aucune.
+# > **Difficultés rencontrées** — La première version de la grille utilisait des intitulés
+# > courts non officiels, décalés de C1 à C7 par rapport au référentiel (ex. C4 présentée
+# > comme « Éco-conception » au lieu de « Choisir un modèle IA ») : elle renvoyait donc le
+# > jury vers de mauvaises sections. Corrigé en réalignant la grille sur les intitulés et
+# > les items du référentiel.
 # >
 # > **Impact sur la suite** — La grille de couverture sert de fil conducteur au jury ;
-# > elle est reproduite en §15.4 avec le détail complet des artefacts de preuve par compétence.
+# > §15.4 la détaille item par item, avec la sous-section de preuve de chaque item.
 # >
 # > **Temps passé** — < 30 min.

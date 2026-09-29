@@ -244,7 +244,7 @@ if "B1 — Règle métier" in tableau_modeles.index and len(tableau_modeles) > 1
 # %% [markdown]
 # ### 9.5 Journalisation MLflow
 #
-# Un run MLflow est créé par modèle pour la traçabilité réglementaire (C9) et la reproductibilité.
+# Un run MLflow est créé par modèle pour le versioning du modèle (item C6) et la reproductibilité.
 # Le backend fichier local est dans `mlruns/` (exclu de git, inclus dans le ZIP de livraison).
 
 # %%
@@ -286,8 +286,8 @@ display(
 # **Règle clé (cf. `docs/POINTS_DE_VIGILANCE.md` §4)** :
 # SMOTE modifie la prévalence apprise → les probabilités sorties ne reflètent plus la vraie
 # prévalence → le seuil économique (qui multiplie ces probabilités par des euros) serait faux.
-# Le modèle retenu pour §10 est donc celui avec `class_weight`, dont les probabilités restent
-# calibrées.
+# Le modèle retenu pour la suite (seuil économique §12.5) est donc celui avec `class_weight`,
+# dont les probabilités restent calibrées.
 #
 # SMOTE est malgré tout entraîné et présenté **dans le pipeline de CV** (imblearn.Pipeline)
 # pour montrer l'effet exact sur la calibration — preuve de maîtrise attendue par le jury.
@@ -359,7 +359,7 @@ sauvegarder(fig)
 # à sur-estimer ou sous-estimer systématiquement les probabilités (courbe déviée de
 # la diagonale), rendant le score inutilisable pour un calcul économique.
 # Le modèle `class_weight='balanced'` reste proche de la diagonale et est retenu
-# pour le calcul du seuil économique en §10.
+# pour le calcul du seuil économique en §12.5.
 
 # %% [markdown]
 # ### 9.7 Optimisation des hyperparamètres (Optuna)
@@ -533,7 +533,7 @@ display(
 )
 
 # %% [markdown]
-# ### 9.8 Empreinte carbone du tuning
+# ### 9.8 Empreinte carbone du tuning — item C4 : éco-conception
 #
 # Sous WSL2, CodeCarbon n'a pas accès aux compteurs **RAPL** (interface noyau bloquée).
 # Il bascule sur une **estimation** basée sur le TDP déclaré du processeur et
@@ -583,7 +583,7 @@ if _is_est:
     )
 
 # %% [markdown]
-# ### 9.9 Note d'arbitrage performance / temps / carbone
+# ### 9.9 Note d'arbitrage performance / temps / carbone — item C4 : éco-conception
 #
 # C'est le livrable sur lequel la formation insiste le plus : **justifier le coût du tuning
 # par rapport au gain obtenu**, en rapportant l'empreinte carbone au gain de PR-AUC.
@@ -641,8 +641,8 @@ display(
 # %% [markdown]
 # ### 9.10 Contraintes d'éco-conception portées au commanditaire (C4)
 #
-# Les éléments ci-dessous sont formalisés dans la *model card* (§14) et le registre
-# des risques (§15), et communiqués au commanditaire comme obligations de service.
+# Les éléments ci-dessous sont formalisés dans la *model card* (`docs/MODEL_CARD.md`) et le
+# registre des risques (§4.6.1), et communiqués au commanditaire comme obligations de service.
 
 # %%
 display(
@@ -740,8 +740,8 @@ display(
 # 2. Calibration des probabilités satisfaisante (`class_weight`, non SMOTE)
 # 3. Latence unitaire p95 ≤ `config.CIBLES_PERFORMANCE["latence_unitaire_ms"]` ms
 # 4. Latence batch ≤ `config.CIBLES_PERFORMANCE["latence_batch_5k_s"]` s
-# 5. TreeExplainer SHAP disponible (requis pour C8)
-# 6. Run MLflow enregistré (traçabilité C9)
+# 5. TreeExplainer SHAP disponible (sortie obligatoire d'explicabilité, §12.8)
+# 6. Run MLflow enregistré (versioning du modèle, item C6)
 
 # %%
 _pipeline_optimise = construire_modele_optimise(
@@ -783,13 +783,13 @@ _criteres = pd.DataFrame(
         {
             "Critère": "Calibration probabiliste",
             "Valeur obtenue": "class_weight='balanced' — non rééchantillonné",
-            "Seuil cible": "Probabilités fiables pour seuil économique (§10)",
+            "Seuil cible": "Probabilités fiables pour seuil économique (§12.5)",
             "Statut": "✅",
         },
         {
             "Critère": "Interprétabilité SHAP",
             "Valeur obtenue": "TreeExplainer disponible (arbres)",
-            "Seuil cible": "Requis pour C8 (explicabilité §11)",
+            "Seuil cible": "Sortie obligatoire d'explicabilité (§12.8)",
             "Statut": "✅",
         },
         {
@@ -818,7 +818,7 @@ display(_criteres.style.set_properties(**{"text-align": "left"}))
 # cadrage §2, conformément à l'item C9.
 
 # %% [markdown]
-# ### 9.13 Latence d'inférence — confrontation aux cibles §8
+# ### 9.13 Latence d'inférence — confrontation aux cibles §8 (item C4 : temps d'inférence)
 #
 # La latence est mesurée sur le **modèle final fitté** sur la totalité des données,
 # puis confrontée aux cibles fixées *a priori* en §8 (`config.CIBLES_PERFORMANCE`).
@@ -899,8 +899,9 @@ display(
 # > exposée honnêtement (mode et facteur d'émission affichés).  Latence de l'optimisation Optuna :
 # > résolue par stockage SQLite + cache JSON via `charger_ou_calculer`.
 # >
-# > **Impact sur la suite** — Le modèle sérialisé (`modele_final.joblib`) alimente §10 (seuil
-# > économique), §11 (SHAP), §12 (ROI), §13 (monitoring et réentraînement), §14 (model card).
+# > **Impact sur la suite** — Le modèle sérialisé (`modele_final.joblib`) alimente §10 (API et
+# > déploiement), §12 (seuil économique, SHAP, ROI), §13 (monitoring et réentraînement) et la
+# > model card (`docs/MODEL_CARD.md`).
 # > Les hyperparamètres retenus initialisent les bornes Optuna du prochain cycle d'entraînement.
 # >
 # > **Temps passé** — ~3 h (Optuna, CodeCarbon, latence, arbitrage, éco-conception, transfert).

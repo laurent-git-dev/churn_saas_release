@@ -3,7 +3,7 @@
 #
 # Cette section regroupe les éléments de référence utiles au jury sans alourdir le corps
 # principal : environnement de reproduction, hyperparamètres retenus, grille de couverture
-# C1→C9, liste des utilitaires du package, et glossaire.
+# C1→C9 item par item du référentiel, liste des utilitaires du package, et glossaire.
 
 # %%
 import importlib.metadata
@@ -184,71 +184,150 @@ display(
 # ### 15.4 Grille de couverture C1 → C9
 
 # %%
+# Intitulés et items recopiés mot pour mot du référentiel CISIA (docs/CONTEXTE_EPREUVE.md §5).
+_INTITULES = {
+    "C1": "C1 — Identifier un jeu de données répondant aux besoins métiers",
+    "C2": "C2 — Identifier les risques éthiques et sociétaux",
+    "C3": "C3 — Préparer les données",
+    "C4": "C4 — Choisir un modèle IA",
+    "C5": "C5 — Entraîner le modèle",
+    "C6": "C6 — Implémenter le modèle",
+    "C7": "C7 — Architecture cible",
+    "C8": "C8 — Mesurer la performance et les impacts",
+    "C9": "C9 — Amélioration continue",
+}
+
+# (compétence, item du référentiel, section(s) du notebook, preuve)
+_ITEMS = [
+    # C1
+    ("C1", "Les besoins métiers sont correctement identifiés", "§2.1, §2.4",
+     "Contexte éditeur SaaS, besoins Customer Success, critères de réussite chiffrés"),
+    ("C1", "Les cas d'usage sont correctement décrits", "§2.2",
+     "3 cas d'usage : revue hebdomadaire, alerte, préparation de renouvellement"),
+    ("C1", "Les données pertinentes (et nécessaires a minima) sont identifiées", "§3.2, §5.2",
+     "Dictionnaire de données avec colonne « pertinence a priori »"),
+    ("C1", "L'existence, la disponibilité et l'accès des données sont vérifiés", "§3.1",
+     "Contrôles exécutés : existence, hash SHA-256, volumétrie, fraîcheur, droits d'accès"),
+    ("C1", "Des solutions alternatives sont envisagées en cas d'indisponibilité", "§3.4",
+     "Tableau enrichissements souhaités × disponibilité × plan B"),
+    # C2
+    ("C2", "Les chartes éthiques européennes et françaises sont connues et appliquées", "§4.3",
+     "7 exigences HLEG (UE) + rapport Villani, recommandations CNIL, charte Impact AI"),
+    ("C2", "Les impacts éthiques et sociétaux sont connus et leurs conséquences comprises",
+     "§4.1, §4.2, §4.5",
+     "RGPD, classification AI Act, prophétie auto-réalisatrice, incitation perverse, boucle "
+     "de rétroaction"),
+    ("C2", "Les biais potentiels ou existants sont identifiés", "§4.4",
+     "Équité mesurée (TPR/FPR) par pays, taille d'entreprise et secteur"),
+    ("C2", "Les dilemmes éthiques sont identifiés", "§4.5", "3 dilemmes explicités et arbitrés"),
+    ("C2", "Les risques sont portés à la connaissance des acteurs concernés", "§4.6.1, §4.6.2",
+     "`docs/RISK_REGISTER.md` + note de synthèse datée au commanditaire"),
+    ("C2", "La vérification par les acteurs concernés des problèmes légaux et éthiques du jeu "
+     "de données est faite", "§4.6.3", "Fiche de revue DPO / juriste (simulée, assumée)"),
+    # C3
+    ("C3", "Les données sont correctement nommées ou renommées", "§5.9, §7.3",
+     "Tableau de renommage avant/après, convention snake_case en français"),
+    ("C3", "Le format des données est adapté à l'usage", "§5.5, §5.6, §7.3",
+     "Coercition numérique, dates multi-formats parsées, typage cible"),
+    ("C3", "Les données altérées, inexactes ou non pertinentes sont corrigées ou supprimées",
+     "§5.4, §5.7, §6.5, §6.10, §7.3",
+     "Doublons, valeurs impossibles, fuite `sante_compte_fin_periode`, criblage des leurres"),
+    ("C3", "Les traitements effectués sont correctement documentés", "§5.10, §7.8",
+     "Tableau de bord qualité, schéma du jeu gold, journaux de bord, `docs/DATASHEET.md`"),
+    ("C3", "Le choix du modèle de stockage est adapté", "§3.3",
+     "Note d'arbitrage fichier/objet vs relationnel vs documents"),
+    ("C3", "Le cycle de vie du jeu de données est documenté", "§3.5",
+     "Création, versions, rétention, accès, usages futurs (`docs/DATASHEET.md`)"),
+    ("C3", "Le cycle de vie documenté est soumis aux parties prenantes", "§3.6",
+     "Trace de soumission datée (DPO, Data Owner, CS Lead) avec retours"),
+    # C4
+    ("C4", "La pertinence est évaluée grâce aux bons indicateurs (analyse ROC)", "§12.2",
+     "Courbe ROC + AUC, PR-AUC comme métrique d'arbitrage justifiée"),
+    ("C4", "Les contraintes opérationnelles sont prises en compte", "§8.3, §10.9",
+     "Batch nocturne, ~5 000 comptes, intégration CRM, compétences de l'équipe"),
+    ("C4", "Les contraintes d'éco-conception sont portées à la connaissance des acteurs",
+     "§8.4, §9.8–9.10, §12.13",
+     "Empreinte CodeCarbon, note d'arbitrage performance/temps/carbone transmise"),
+    ("C4", "Les grandes familles d'algorithmes sont connues", "§8.6",
+     "Panorama des familles avec motif de retenue ou d'écartement"),
+    ("C4", "La démarche scientifique est correctement documentée", "§8.7, §8.8",
+     "Trois baselines et protocole de comparaison écrit avant les résultats"),
+    ("C4", "La performance attendue est déterminée (précision, temps de traitement et "
+     "d'inférence, énergie)", "§8.2, §9.13, §12.3",
+     "Cibles chiffrées a priori, latence unitaire et batch mesurées"),
+    ("C4", "Le type de résultat attendu est identifié (probabiliste/déterministe)", "§8.1",
+     "Sortie probabiliste assumée, d'où l'exigence de calibration"),
+    ("C4", "Le contexte des cas d'usage est pris en compte", "§8.9",
+     "Lien explicite avec les 3 cas d'usage de §2"),
+    ("C4", "Le modèle d'apprentissage choisi est cohérent avec les résultats attendus", "§8.1",
+     "Supervisé : classification binaire + régression"),
+    ("C4", "La pertinence des solutions sur l'étagère est évaluée", "§8.5",
+     "Build vs buy : Gainsight, ChurnZero, AutoML managé"),
+    # C5
+    ("C5", "Le modèle est optimisé suivant le contexte", "§9.6, §9.7",
+     "Gestion du déséquilibre, Optuna TPE à budget modeste justifié"),
+    ("C5", "Le modèle créé est entraîné", "§9.2, §9.3",
+     "Stratégie d'entraînement, tableau comparatif des modèles en validation croisée"),
+    ("C5", "Le modèle choisi est réentraîné le cas échéant", "§9.12, §13.8",
+     "Réentraînement sur train+validation avant gel, plan de réentraînement"),
+    ("C5", "Les connaissances sont transférées d'un modèle à l'autre le cas échéant", "§9.11",
+     "Transfer learning non applicable ici ; warm_start, réutilisation des hyperparamètres"),
+    ("C5", "Les hyperparamètres sont décrits", "§9.7, §15.2",
+     "Espace de recherche × valeur retenue × effet observé"),
+    ("C5", "Le feature engineering est effectué", "§7.5", "Features métier dérivées"),
+    # C6
+    ("C6", "Le processus de livraison et de déploiement continu est mis en œuvre",
+     "§10.6, §10.7", "CI (lint, types, tests, gate qualité) + job CD, image Docker"),
+    ("C6", "Le versioning est implémenté", "§10.4, §10.5, §13.10",
+     "Code (git), données (DVC), modèle (MLflow Registry), configuration"),
+    ("C6", "Les besoins d'intégration sont documentés", "§10.2, §10.8",
+     "Contrat d'API, contrat d'échange CRM : format, fréquence, volumétrie, authentification"),
+    # C7
+    ("C7", "Les principales architectures et leurs contraintes sont connues", "§11.2, §11.6",
+     "3 scénarios : VM + batch, conteneurs managés, cloud managé"),
+    ("C7", "Les contraintes économiques des scénarios sont portées à la connaissance des "
+     "acteurs", "§11.6, §11.7", "Coût mensuel × complexité × délai × souveraineté, "
+     "recommandation"),
+    ("C7", "Les acteurs sont interrogés pour préciser les contraintes de généralisation",
+     "§11.4, §11.5", "Compte-rendu d'entretien DSI / RSSI / DPO / CS Lead (simulé, assumé)"),
+    # C8
+    ("C8", "Des indicateurs de performance et seuils associés sont définis", "§8.2, §11.8",
+     "Cibles a priori, SLO/SLI et seuils d'alerte"),
+    ("C8", "La performance est mesurée grâce au suivi des indicateurs",
+     "§12.2, §12.12, §12.13", "Métriques techniques, KPI métier, ROI, carbone"),
+    ("C8", "Les résultats sont interprétés et présentés aux interlocuteurs concernés", "§12.15",
+     "Note de restitution au commanditaire : ce qui marche, ce qui ne marche pas, décision"),
+    ("C8", "Les actions adaptées sont déclenchées en fonction des indicateurs",
+     "§12.15, §13.8", "Table de décision seuil → action (réentraîner, alerter, suspendre)"),
+    # C9
+    ("C9", "Système d'évaluation automatisé et intégré au CI/CD via les pratiques MLOps",
+     "§13.2", "`tests/test_model_quality_gate.py` bloquant en CI + gate de promotion MLflow"),
+    ("C9", "Les métriques sont intégrées (taux de prévision, robustesse, variations de "
+     "performance, obsolescence)", "§13.3–13.6, §13.9",
+     "PSI/KS, Evidently, test de robustesse, indicateur d'obsolescence, monitoring"),
+    ("C9", "La pertinence des indicateurs est interrogée selon une périodicité définie en "
+     "phase de cadrage", "§2.5, §13.11", "Comité trimestriel décidé au cadrage, rituel outillé"),
+]
+
 _grille_c = pd.DataFrame(
-    [
-        {
-            "Compétence": "C1 — Cadrage du problème IA",
-            "Sections couvrant l'item": "§2 (cas d'usage, valeur attendue), §4 (éthique, conformité, RGPD), §8 (contraintes fixées a priori)",
-            "Éléments de preuve dans le notebook": "Tableau des 3 cas d'usage · KPI attendus · Colonnes interdites · Cibles de performance",
-            "Statut": "✓",
-        },
-        {
-            "Compétence": "C2 — Données et gouvernance",
-            "Sections couvrant l'item": "§3 (gouvernance, RGPD, datasheet), §5 (chargement, profil compact), §6 (EDA)",
-            "Éléments de preuve dans le notebook": "Datasheet · Contrôle qualité · Analyse univariée/bivariée · Détection des leurres (§6)",
-            "Statut": "✓",
-        },
-        {
-            "Compétence": "C3 — Préparation des données",
-            "Sections couvrant l'item": "§7 (pipeline sklearn, anti-fuite, split gold)",
-            "Éléments de preuve dans le notebook": "Pipeline ColumnTransformer · Colonnes interdites · `test_no_leakage.py` vert · Jeu gold Parquet",
-            "Statut": "✓",
-        },
-        {
-            "Compétence": "C4 — Éco-conception",
-            "Sections couvrant l'item": "§4 (IA responsable), §9.8–9.9 (CodeCarbon, arbitrage), §9.10 (contraintes opérationnelles)",
-            "Éléments de preuve dans le notebook": "Tableau émissions CO₂ (estimation WSL2) · Note arbitrage performance/carbone · Fréquence scoring hebdomadaire",
-            "Statut": "✓",
-        },
-        {
-            "Compétence": "C5 — Choix et entraînement du modèle",
-            "Sections couvrant l'item": "§8 (sélection justifiée), §9 (5 modèles comparés, Optuna, calibration, transfert)",
-            "Éléments de preuve dans le notebook": "Tableau comparatif PR-AUC · Gestion déséquilibre (class_weight vs SMOTE) · Espace de recherche Optuna · Note transfert learning",
-            "Statut": "✓",
-        },
-        {
-            "Compétence": "C6 — Mise en exploitation",
-            "Sections couvrant l'item": "§10 (API, Docker, CI/CD, versioning, contrat CRM), §11 (architecture cible)",
-            "Éléments de preuve dans le notebook": "TestClient (5 codes HTTP vérifiés) · Gate MLflow · Versioning 4 axes · CI GitHub Actions · Docker multi-stage",
-            "Statut": "✓",
-        },
-        {
-            "Compétence": "C7 — Documentation et communication",
-            "Sections couvrant l'item": "§10 (runbook, contrat API), §14 (restitution commanditaire), §15 (annexes, glossaire)",
-            "Éléments de preuve dans le notebook": "Model card · Contrat d'échange CRM · RUNBOOK.md · Table de décision seuil → action",
-            "Statut": "✓",
-        },
-        {
-            "Compétence": "C8 — Mesure de performance et impacts",
-            "Sections couvrant l'item": "§12 (métriques, ROI, SHAP, leurres, régression CLV, restitution commanditaire)",
-            "Éléments de preuve dans le notebook": "PR-AUC / ROC-AUC / Brier OOF · Seuil économique τ* · Fiches comptes SHAP · Verdict leurres 3 preuves · KPI fatigue d'alerte",
-            "Statut": "✓",
-        },
-        {
-            "Compétence": "C9 — Amélioration continue",
-            "Sections couvrant l'item": "§13 (gate CI/CD, PSI/KS, Evidently, robustesse, obsolescence, flow, comité)",
-            "Éléments de preuve dans le notebook": "`test_model_quality_gate.py` · PSI/KS scénarios de dérive · Rapport Evidently · Indicateur obsolescence 180j · Périodicité comité trimestriel",
-            "Statut": "✓",
-        },
-    ]
-).set_index("Compétence")
+    _ITEMS, columns=["Compétence", "Item du référentiel", "Section(s)", "Preuve"]
+)
+_grille_c["Compétence"] = _grille_c["Compétence"].map(_INTITULES)
+_grille_c = _grille_c.set_index(["Compétence", "Item du référentiel"])
 
 display(_grille_c.style.set_properties(**{"text-align": "left", "white-space": "pre-wrap"}))
+display(
+    Markdown(
+        f"**{_grille_c.index.get_level_values(0).nunique()} compétences** · "
+        f"**{len(_grille_c)} items du référentiel**, chacun relié à au moins une sous-section."
+    )
+)
 
 # %% [markdown]
 # **Ce qu'il faut retenir.**
-# Les 9 compétences C1→C9 sont couvertes. Les éléments de preuve sont des références directes
-# aux sections et fichiers du notebook — le jury peut naviguer vers chaque section pour vérifier.
+# Chaque item du référentiel CISIA, repris mot pour mot, est relié aux sous-sections du
+# notebook qui en portent la preuve. Le jury peut ainsi aller vérifier chaque point
+# directement. La grille de la page de garde en est la synthèse, une ligne par compétence.
 
 # %% [markdown]
 # ### 15.5 Glossaire
@@ -322,7 +401,9 @@ display(
 # >
 # > **Décisions retenues** — Versions capturées par `importlib.metadata` (pas recopiées à la main).
 # > Procédure de reproduction en 4 étapes (`uv sync --frozen` → `make notebook-full`).
-# > Grille C1→C9 exhaustive avec références directes aux sections du notebook.
+# > Grille C1→C9 item par item, alignée mot pour mot sur le référentiel CISIA, avec renvoi
+# > vers la sous-section qui porte chaque preuve. Pas de colonne « Statut » : c'était une
+# > coche saisie à la main, sans valeur de preuve.
 # > Glossaire de 25 termes couvrant toute la chaîne (données → ML → déploiement → monitoring).
 # >
 # > **Alternatives écartées** — `pip freeze` (non reproductible hors venv). Glossaire générique
@@ -330,6 +411,9 @@ display(
 # >
 # > **Difficultés rencontrées** — Certaines bibliothèques (prefect, uv) peuvent ne pas être
 # > installées dans tous les environnements ; la cellule gère le `PackageNotFoundError` proprement.
+# > La première version de la grille C1→C9 reprenait des intitulés non officiels, décalés de
+# > C1 à C7 (ex. C4 « Éco-conception » au lieu de « Choisir un modèle IA ») : réécrite à partir
+# > des items du référentiel pour que chaque renvoi pointe vers la bonne section.
 # >
 # > **Impact sur la suite** — Section terminale : aucune dépendance en aval. Alimente le jury
 # > pour la vérification de la couverture C1→C9 et la reproductibilité.
