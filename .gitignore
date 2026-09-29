@@ -16,6 +16,8 @@
 /mlruns/
 /artifacts/
 /reports/figures/
+# Sorties datées du batch de scoring Prefect (régénérées à chaque build, §10.10)
+/reports/tables/scores_batch_*
 
 # Métadonnées Windows WSL (Zone.Identifier)
 *:Zone.Identifier
