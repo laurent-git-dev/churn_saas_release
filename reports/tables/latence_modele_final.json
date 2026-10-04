@@ -1,0 +1,7 @@
+{
+  "latence_unitaire_ms_mediane": 24.885353486752138,
+  "latence_unitaire_ms_p95": 32.59674508008174,
+  "latence_batch_5k_s": 0.058384642004966736,
+  "n_unitaire": 200,
+  "n_batch": 5000
+}

@@ -1,0 +1,18 @@
+{
+  "modele_nom": "Baseline — régression logistique",
+  "best_params": {
+    "C": 0.0745934328572655,
+    "max_iter": 500
+  },
+  "best_value": 0.7858115223655465,
+  "pr_auc_defaut": 0.784592565934881,
+  "gain_pr_auc": 0.0012189564306654965,
+  "n_essais_demandes": 30,
+  "n_essais_completes": 30,
+  "emissions_kg_co2": 2.461521326101932e-05,
+  "energy_kwh": 0.00043925147238564784,
+  "duree_s": 81.04451914399397,
+  "mode_mesure_carbone": "estimation TDP",
+  "facteur_emission_kg_kwh": 0.056039000000000005,
+  "is_estimation": true
+}

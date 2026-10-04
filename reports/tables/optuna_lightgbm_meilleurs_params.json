@@ -1,0 +1,23 @@
+{
+  "modele_nom": "LightGBM",
+  "best_params": {
+    "num_leaves": 10,
+    "learning_rate": 0.027010527749605478,
+    "n_estimators": 250,
+    "min_child_samples": 19,
+    "reg_lambda": 1.382623217936987,
+    "subsample": 0.6798695128633439,
+    "colsample_bytree": 0.7571172192068059
+  },
+  "best_value": 0.7758015463933056,
+  "pr_auc_defaut": 0.7587364604991869,
+  "gain_pr_auc": 0.017065085894118703,
+  "n_essais_demandes": 30,
+  "n_essais_completes": 30,
+  "emissions_kg_co2": 1.8047300617289002e-05,
+  "energy_kwh": 0.00032204894122466496,
+  "duree_s": 101.08571151498472,
+  "mode_mesure_carbone": "estimation TDP",
+  "facteur_emission_kg_kwh": 0.056039000000000005,
+  "is_estimation": true
+}

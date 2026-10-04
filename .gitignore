@@ -1,0 +1,58 @@
+# Données et artefacts (exclus de git, présents dans le ZIP final)
+# Les pointeurs DVC (*.dvc) et les .gitignore générés par DVC restent dans git
+/data/*
+!/data/raw/
+/data/raw/*
+!/data/raw/*.dvc
+!/data/raw/.gitignore
+!/data/interim/
+/data/interim/*
+!/data/interim/*.dvc
+!/data/interim/.gitignore
+!/data/gold/
+/data/gold/*
+!/data/gold/*.dvc
+!/data/gold/.gitignore
+/mlruns/
+/artifacts/
+/reports/figures/
+# Sorties datées du batch de scoring Prefect (régénérées à chaque build, §10.10)
+/reports/tables/scores_batch_*
+
+# Métadonnées Windows WSL (Zone.Identifier)
+*:Zone.Identifier
+
+# Environnement Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+*.ipynb_checkpoints/
+*.ipynb
+
+# Outils
+.env
+emissions.csv
+catboost_info/
+
+# mypy / ruff / coverage
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PDFs générés depuis les .md (régénérables à la demande)
+docs/*.pdf
+docs/archive/*.pdf
+livraison/*.pdf
+
+# Aperçu de contrôle du support de soutenance (livraison/generer_support.py), non livré
+livraison/apercu/

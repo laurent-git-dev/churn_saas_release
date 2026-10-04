@@ -1,0 +1,9 @@
+{
+  "seuil": 0.2773544445103989,
+  "recall": 0.8,
+  "precision": 0.6177606177606177,
+  "part_signalee": 0.3626,
+  "n_signales": 1813.0,
+  "n_faux_negatifs": 280.0,
+  "recall_cible": 0.8
+}

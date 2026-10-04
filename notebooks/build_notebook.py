@@ -1,0 +1,172 @@
+"""Génère et exécute le notebook CISIA depuis les sections jupytext.
+
+Usage :
+    uv run python notebooks/build_notebook.py
+    uv run python notebooks/build_notebook.py --sans-execution
+    uv run python notebooks/build_notebook.py --force
+"""
+
+import argparse
+import os
+import sys
+import time
+from pathlib import Path
+from typing import cast
+
+import jupytext
+import nbclient
+import nbformat
+
+RACINE = Path(__file__).resolve().parent.parent
+SECTIONS_DIR = Path(__file__).resolve().parent / "sections"
+SORTIE = Path(__file__).resolve().parent / "churn_saas_certification.ipynb"
+
+NOYAU = {
+    "display_name": "Python 3",
+    "language": "python",
+    "name": "python3",
+}
+
+TIMEOUT_CELLULE = 600  # secondes par cellule (étapes lourdes : Optuna, SHAP, CodeCarbon)
+
+# Sections affichées à leur place mais exécutées après toutes les autres : le résumé exécutif
+# (§1) synthétise les résultats de §9-§12, qu'il doit lire une fois produits par CE build
+SECTIONS_EXECUTEES_EN_DERNIER = frozenset({"01_resume_executif.py"})
+
+
+def lire_sections() -> list[Path]:
+    """Retourne les fichiers de sections triés par nom (ordre numérique)."""
+    fichiers = sorted(SECTIONS_DIR.glob("*.py"))
+    if not fichiers:
+        print(f"[ERREUR] Aucune section trouvée dans {SECTIONS_DIR}", file=sys.stderr)
+        sys.exit(1)
+    print(f"[INFO] {len(fichiers)} section(s) détectée(s) :")
+    for f in fichiers:
+        print(f"       • {f.name}")
+    return fichiers
+
+
+def fusionner_sections(fichiers: list[Path]) -> nbformat.NotebookNode:
+    """Lit chaque section au format jupytext percent et fusionne les cellules."""
+    notebooks = []
+    for f in fichiers:
+        nb = jupytext.read(f, fmt="py:percent")
+        # Section d'origine de chaque cellule : sert à l'ordre d'exécution, retirée à l'écriture
+        for cellule in nb.cells:
+            cellule.metadata["section"] = f.name
+        notebooks.append(nb)
+
+    # Le premier notebook sert de base ; on lui greffe les cellules des suivants
+    combined = notebooks[0]
+    for nb in notebooks[1:]:
+        combined.cells.extend(nb.cells)
+
+    # Métadonnées du noyau — obligatoires pour nbclient
+    combined.metadata["kernelspec"] = NOYAU
+    combined.metadata.setdefault("language_info", {"name": "python", "version": "3.12"})
+
+    # Formatage nbformat v4
+    nbformat.validate(combined)
+    return cast(nbformat.NotebookNode, combined)
+
+
+def ordre_execution(cellules: list[nbformat.NotebookNode]) -> list[nbformat.NotebookNode]:
+    """Ordre d'exécution : les sections de SECTIONS_EXECUTEES_EN_DERNIER passent à la fin.
+
+    L'ordre relatif est conservé à l'intérieur de chaque groupe. Tri stable sur un booléen,
+    et non test d'appartenance : deux cellules de contenu identique ne sont pas confondues.
+    """
+    return sorted(
+        cellules, key=lambda c: c.metadata.get("section") in SECTIONS_EXECUTEES_EN_DERNIER
+    )
+
+
+def executer(nb: nbformat.NotebookNode) -> nbformat.NotebookNode:
+    """Exécute le notebook avec nbclient et retourne le notebook avec sorties.
+
+    Les cellules sont exécutées dans ``ordre_execution()`` puis remises dans l'ordre
+    d'affichage : nbclient remplit les sorties sur les objets cellules eux-mêmes, qui les
+    conservent en changeant de place. Les numéros d'exécution restent ceux de l'ordre réel.
+    """
+    ordre_affichage = list(nb.cells)
+    nb.cells = ordre_execution(ordre_affichage)
+    # extra_arguments passe --IPKernelApp.log_level=ERROR au sous-processus kernel,
+    # ce qui supprime les deux warnings ipykernel sans affecter la capture des erreurs
+    # de cellule (celles-ci remontent via le protocole ZMQ, pas via stderr du kernel).
+    client = nbclient.NotebookClient(
+        nb,
+        timeout=TIMEOUT_CELLULE,
+        kernel_name="python3",
+        resources={"metadata": {"path": str(RACINE)}},
+        extra_arguments=["--IPKernelApp.log_level=ERROR"],
+    )
+    try:
+        client.execute()
+    finally:
+        # Y compris en cas d'échec : le notebook partiel sauvegardé garde l'ordre d'affichage
+        nb.cells = ordre_affichage
+    return nb
+
+
+def retirer_metadonnees_internes(nb: nbformat.NotebookNode) -> nbformat.NotebookNode:
+    """Retire la section d'origine ajoutée à chaque cellule par ``fusionner_sections()``."""
+    for cellule in nb.cells:
+        cellule.metadata.pop("section", None)
+    return nb
+
+
+def _ecrire(nb: nbformat.NotebookNode) -> None:
+    """Écrit le notebook sans les métadonnées internes (nbformat n'est pas typé)."""
+    nbformat.write(retirer_metadonnees_internes(nb), SORTIE)  # type: ignore[no-untyped-call]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Génère le notebook CISIA depuis les sections jupytext."
+    )
+    parser.add_argument(
+        "--sans-execution",
+        action="store_true",
+        help="Convertit les sections en notebook sans l'exécuter.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force le recalcul de toutes les étapes lourdes (ignore le cache).",
+    )
+    args = parser.parse_args()
+
+    # --force positionne la variable d'environnement lue par churn_saas.cache
+    if args.force or os.environ.get("FORCE_RECALC") == "1":
+        os.environ["FORCE_RECALC"] = "1"
+        print("[INFO] Mode recalcul forcé activé (FORCE_RECALC=1).")
+
+    t_debut = time.perf_counter()
+
+    print("[INFO] Lecture et fusion des sections…")
+    fichiers = lire_sections()
+    nb = fusionner_sections(fichiers)
+
+    if args.sans_execution:
+        print("[INFO] Mode --sans-execution : écriture du notebook sans exécution.")
+        _ecrire(nb)
+    else:
+        print("[INFO] Exécution du notebook (timeout par cellule :", TIMEOUT_CELLULE, "s)…")
+        try:
+            nb = executer(nb)
+        except nbclient.exceptions.CellExecutionError as exc:
+            print(f"\n[ERREUR] Échec lors de l'exécution d'une cellule :\n{exc}", file=sys.stderr)
+            # On sauvegarde quand même le notebook partiel pour faciliter le débogage
+            _ecrire(nb)
+            print(f"[INFO] Notebook partiel sauvegardé → {SORTIE.relative_to(RACINE)}")
+            sys.exit(1)
+        _ecrire(nb)
+
+    t_fin = time.perf_counter()
+    duree = t_fin - t_debut
+    print(f"\n[OK] Notebook généré → {SORTIE.relative_to(RACINE)}")
+    print(f"[OK] Temps total : {duree:.1f} s")
+
+
+if __name__ == "__main__":
+    main()
