@@ -1,0 +1,14 @@
+# Source de données provisionnée au démarrage de Grafana : le tableau de bord la trouve par sa
+# variable DS_PROMETHEUS (type « datasource », requête « prometheus »), sans configuration à la main.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090   # nom du service dans docker-compose.yml
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 30s           # = scrape_interval de monitoring/prometheus.yml

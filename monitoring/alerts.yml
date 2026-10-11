@@ -1,0 +1,35 @@
+groups:
+  - name: churn_saas
+    interval: 30s
+    rules:
+
+      - alert: APIIndisponible
+        expr: up{job="churn_saas_api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          equipe: mlops
+        annotations:
+          summary: "API churn_saas inaccessible"
+          description: >
+            L'instance {{ $labels.instance }} ne répond plus depuis plus d'une minute.
+            Action : vérifier les logs du conteneur et la sonde /health.
+
+      - alert: LatenceElevee
+        expr: >
+          (
+            rate(http_request_duration_seconds_sum{job="churn_saas_api", handler="/predict"}[5m])
+            /
+            rate(http_request_duration_seconds_count{job="churn_saas_api", handler="/predict"}[5m])
+          ) > 0.200
+        for: 5m
+        labels:
+          severity: warning
+          equipe: mlops
+        annotations:
+          summary: "Latence moyenne /predict > 200 ms (SLO CISIA C4/C8)"
+          description: >
+            La latence moyenne sur /predict vaut {{ $value | humanizeDuration }} depuis
+            5 minutes, au-delà de 200 ms (SLO défini en §8 : latence unitaire ≤ 200 ms,
+            p95 suivi sur le dashboard Grafana).
+            Action : vérifier la charge CPU, redémarrer si nécessaire.
